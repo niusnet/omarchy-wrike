@@ -366,7 +366,7 @@ fetch_preview_extras() {
   code=$(api_request "$token" "$base/tasks/$task/attachments" "$ATTACHMENTS_FILE") || status=$?
   if ((status != 0)) || [[ $code != 200 ]] || ! jq -e . >/dev/null 2>&1 <"$ATTACHMENTS_FILE"; then
     printf '{"data":[]}' >"$ATTACHMENTS_FILE"
-  else
+  elif [[ ${enrich_urls:-0} == 1 ]]; then
     enrich_attachment_urls "$ATTACHMENTS_FILE"
   fi
 
@@ -506,6 +506,11 @@ while (($# > 0)); do
     task_id="${2:-}"
     shift 2
     ;;
+  --attachments)
+    mode="attachments"
+    task_id="${2:-}"
+    shift 2
+    ;;
   --comment)
     mode="comment"
     task_id="${2:-}"
@@ -599,7 +604,7 @@ if [[ $mode == "search" ]]; then
   else
     search_by_title "$trimmed_query" >"$TASKS_FILE"
   fi
-elif [[ $mode == "preview" ]]; then
+elif [[ $mode == "preview" || $mode == "attachments" ]]; then
   trimmed_query=$(trim "$task_id")
   if [[ -z $trimmed_query ]]; then
     emit_results "" "$host" "$account"
@@ -631,7 +636,7 @@ printf '{"data":[]}' >"$ATTACHMENTS_FILE"
 CONTACTS_FILE=$(mktemp)
 printf '{"data":[]}' >"$CONTACTS_FILE"
 
-if [[ $mode != "search" ]]; then
+if [[ $mode == "dashboard" ]]; then
   spaces_status=0
   spaces_code=$(api_request "$token" "$base/spaces" "$SPACES_FILE" --get \
     --data-urlencode "userIsMember=true") || spaces_status=$?
@@ -653,11 +658,12 @@ if [[ $mode != "search" ]]; then
   fi
 
   fetch_folder_index
-  if [[ $mode == "preview" ]]; then
-    preview_id=$(jq -r '.data[0].id // empty' <"$TASKS_FILE" 2>/dev/null || true)
-    [[ -n $preview_id ]] || preview_id=$(trim "$task_id")
-    fetch_preview_extras "$preview_id"
-  fi
+elif [[ $mode == "preview" || $mode == "attachments" ]]; then
+  preview_id=$(jq -r '.data[0].id // empty' <"$TASKS_FILE" 2>/dev/null || true)
+  [[ -n $preview_id ]] || preview_id=$(trim "$task_id")
+  enrich_urls=0
+  [[ $mode == "attachments" ]] && enrich_urls=1
+  fetch_preview_extras "$preview_id"
 fi
 
 # Shared jq used to turn a Wrike task into the panel's row shape. Custom
@@ -803,17 +809,17 @@ jq -n \
         due: (.dates.due // ""),
         effortMinutes: ((.effortAllocation.allocatedEffort // .effortAllocation.totalEffort // 0)),
         brief: (.briefDescription // ""),
-        description: (if $mode == "preview" then (.description // .briefDescription // "") else (.briefDescription // "") end),
+        description: (if ($mode == "preview" or $mode == "attachments") then (.description // .briefDescription // "") else (.briefDescription // "") end),
         attachmentCount: ((.attachmentCount // 0)),
         hasAttachments: ((.hasAttachments // false) or ((.attachmentCount // 0) > 0)),
-        attachments: (if $mode == "preview" then
+        attachments: (if ($mode == "preview" or $mode == "attachments") then
           [ ($attachments[0].data // [])[] | {
               id: .id,
               name: (.name // .fileName // "Attachment"),
               url: (.url // .permalink // "")
             } ]
         else [] end),
-        comments: (if $mode == "preview" then
+        comments: (if ($mode == "preview" or $mode == "attachments") then
           [ ($comments[0].data // [])[] | {
               id: .id,
               author: ($contactById[.authorId] // .authorId // ""),
@@ -842,7 +848,7 @@ jq -n \
       account: $account,
       tickets: [
         ($tasks[0].data // [])[]
-        | select($mode == "search" or $mode == "preview" or (.status != "Completed" and .status != "Cancelled"))
+        | select($mode == "search" or $mode == "preview" or $mode == "attachments" or (.status != "Completed" and .status != "Cancelled"))
         | select(in_followed)
         | row
       ],

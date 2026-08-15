@@ -301,6 +301,12 @@ test('groupBySpace clusters by space name, not by the inner project', () => {
   assert.deepEqual(groups[0].tickets.map(t => t.key), ['1', '3'])
 })
 
+test('formatCommentDate shows a full local timestamp', () => {
+  const stamp = Model.formatCommentDate('2026-08-14T16:06:35Z')
+  assert.match(stamp, /14 Aug 2026/)
+  assert.match(stamp, /\d{2}:\d{2}/)
+})
+
 test('newestComments sorts newest first and pages them', () => {
   const page = Model.newestComments([
     { id: 'a', created: '2026-08-10T10:00:00Z', text: 'old' },

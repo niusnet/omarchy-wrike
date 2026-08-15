@@ -611,6 +611,20 @@ function breadcrumbText(ticket) {
   return fallback.join(" / ")
 }
 
+function pad2(value) {
+  return value < 10 ? "0" + value : String(value)
+}
+
+function formatCommentDate(value) {
+  var ms = Date.parse(text(value))
+  if (!isFinite(ms))
+    return ""
+  var date = new Date(ms)
+  var months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+  return date.getDate() + " " + months[date.getMonth()] + " " + date.getFullYear()
+    + "  " + pad2(date.getHours()) + ":" + pad2(date.getMinutes())
+}
+
 function newestComments(comments, limit) {
   var list = asArray(comments).slice()
   list.sort(function (left, right) {
@@ -675,6 +689,7 @@ if (typeof module !== "undefined" && module.exports) {
     formatEffortMinutes: formatEffortMinutes,
     breadcrumbText: breadcrumbText,
     newestComments: newestComments,
+    formatCommentDate: formatCommentDate,
     decorateSections: decorateSections,
     flattenSections: flattenSections
   }

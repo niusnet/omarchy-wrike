@@ -8,6 +8,7 @@ Column {
 
   property var ticket: null
   property bool loading: false
+  property bool attachmentsLoading: false
   property bool posting: false
   property string actionMessage: ""
   property int commentsLimit: 10
@@ -19,6 +20,7 @@ Column {
   signal backRequested()
   signal openRequested()
   signal moreCommentsRequested()
+  signal attachmentsRequested()
   signal commentRequested(string text)
   signal timeRequested(string hours, string note)
 
@@ -46,9 +48,31 @@ Column {
   }
 
   onTicketIdChanged: root.previewTab = "details"
+  onPreviewTabChanged: {
+    if (root.previewTab === "attachments")
+      root.attachmentsRequested()
+  }
 
   width: parent ? parent.width : 0
   spacing: Style.space(12)
+
+  Rectangle {
+    width: parent.width
+    visible: root.loading
+    height: loadLabel.implicitHeight + Style.space(8)
+    radius: Style.cornerRadius
+    color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.08)
+
+    Text {
+      id: loadLabel
+      anchors.centerIn: parent
+      text: qsTr("Loading from Wrike…")
+      color: root.muted
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.caption
+      font.bold: true
+    }
+  }
 
   component SectionLabel: PanelSectionHeader {
     width: root.width
@@ -184,7 +208,16 @@ Column {
 
     Text {
       width: parent.width
-      visible: root.attachmentTotal === 0
+      visible: root.attachmentsLoading
+      text: qsTr("Loading attachments…")
+      color: root.muted
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.caption
+    }
+
+    Text {
+      width: parent.width
+      visible: !root.attachmentsLoading && root.attachmentTotal === 0
       text: qsTr("No attachments on this task.")
       color: root.faint
       font.family: root.fontFamily
@@ -330,7 +363,7 @@ Column {
 
         Text {
           width: parent.width
-          text: String(modelData.author || qsTr("Someone")) + "  ·  " + Model.relativeTime(modelData.created, Date.now())
+          text: String(modelData.author || qsTr("Someone")) + "  ·  " + Model.formatCommentDate(modelData.created)
           color: root.faint
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
@@ -351,7 +384,7 @@ Column {
 
   Text {
     width: parent.width
-    visible: root.previewTab === "details" && root.commentPage.items.length === 0
+    visible: root.previewTab === "details" && !root.loading && root.commentPage.items.length === 0
     text: qsTr("No comments yet.")
     color: root.faint
     font.family: root.fontFamily
@@ -362,7 +395,7 @@ Column {
     visible: root.previewTab === "details"
     enabled: root.commentPage.remaining > 0
     text: root.commentPage.remaining > 0
-      ? qsTr("Load more") + " · " + root.commentPage.remaining
+      ? qsTr("Load 10 more") + " · " + root.commentPage.remaining + qsTr(" left")
       : qsTr("All comments loaded")
     foreground: root.foreground
     fontFamily: root.fontFamily

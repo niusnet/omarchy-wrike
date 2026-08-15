@@ -29,6 +29,7 @@ Item {
 
   property var previewTicket: null
   property bool previewLoading: false
+  property bool attachmentsLoading: false
   property bool previewPosting: false
   property string previewKey: ""
   property string previewAction: ""
@@ -227,6 +228,21 @@ Item {
     commentsLimit += 10
   }
 
+  function loadAttachments() {
+    if (previewKey === "" || attachmentsLoading)
+      return
+    if (previewTicket && Array.isArray(previewTicket.attachments) && previewTicket.attachments.length > 0 && previewTicket.attachments[0].url)
+      return
+    if (previewProcess.running)
+      previewProcess.running = false
+    attachmentsLoading = true
+    _previewStdout = ""
+    _previewPayload = ""
+    previewProcess.stdinEnabled = false
+    previewProcess.command = [helperPath(), "--attachments", previewKey]
+    previewProcess.running = true
+  }
+
   function postComment(text) {
     if (previewKey === "" || String(text || "").trim() === "")
       return
@@ -263,6 +279,7 @@ Item {
     previewKey = ""
     previewTicket = null
     previewLoading = false
+    attachmentsLoading = false
     previewPosting = false
     previewAction = ""
     commentsLimit = 10
@@ -272,11 +289,12 @@ Item {
 
   function applyPreview(raw) {
     previewLoading = false
+    attachmentsLoading = false
     previewPosting = false
     try {
       var data = JSON.parse(String(raw || ""))
       if (String(data.state || "") === "ok" && Array.isArray(data.tickets) && data.tickets.length > 0) {
-        previewTicket = data.tickets[0]
+        previewTicket = mergePreview(previewTicket, data.tickets[0])
         previewAction = ""
       } else {
         previewAction = String(data.message || qsTr("Could not update the task."))
@@ -284,6 +302,28 @@ Item {
     } catch (error) {
       previewAction = qsTr("Could not read the task response.")
     }
+  }
+
+  function mergePreview(current, incoming) {
+    if (!current)
+      return incoming
+    var merged = {}
+    var name
+    for (name in current) {
+      if (Object.prototype.hasOwnProperty.call(current, name))
+        merged[name] = current[name]
+    }
+    for (name in incoming) {
+      if (!Object.prototype.hasOwnProperty.call(incoming, name))
+        continue
+      var value = incoming[name]
+      if (Array.isArray(value) && value.length === 0 && Array.isArray(merged[name]) && merged[name].length > 0)
+        continue
+      if ((value === "" || value === null || value === undefined) && merged[name])
+        continue
+      merged[name] = value
+    }
+    return merged
   }
 
   visible: false

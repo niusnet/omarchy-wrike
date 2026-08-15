@@ -346,6 +346,7 @@ Panel {
             visible: !root.showSettings && root.showPreview
             ticket: wrike.previewTicket
             loading: wrike.previewLoading
+            attachmentsLoading: wrike.attachmentsLoading
             posting: wrike.previewPosting
             actionMessage: wrike.previewAction
             commentsLimit: wrike.commentsLimit
@@ -354,6 +355,7 @@ Panel {
             onBackRequested: root.closePreview()
             onOpenRequested: root.openInBrowser(root.highlightedKey)
             onMoreCommentsRequested: wrike.showMoreComments()
+            onAttachmentsRequested: wrike.loadAttachments()
             onCommentRequested: function (text) { wrike.postComment(text) }
             onTimeRequested: function (hours, note) { wrike.logTime(hours, note) }
           }

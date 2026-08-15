@@ -23,6 +23,8 @@ PanelHero {
       return qsTr("Settings")
     if (loading && !hasData)
       return qsTr("Loading")
+    if (loading)
+      return qsTr("Refreshing Wrike…")
     if (state !== "ok")
       return message
     return inProgressCount + qsTr(" in progress · ") + todoCount + qsTr(" to do")
