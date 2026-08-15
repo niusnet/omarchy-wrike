@@ -20,12 +20,32 @@ readonly DEFAULT_HOST="www.wrike.com"
 readonly HOSTS=("www.wrike.com" "app-eu.wrike.com" "app-us2.wrike.com")
 
 BODY_FILE=""
+
+# `read -s` turns echo off. If the user hits Ctrl+C there, bash can leave the
+# terminal silent, which feels like the script trapped them. Always put echo
+# back, including on interrupt.
+restore_tty() {
+  if [[ -t 0 ]]; then
+    stty echo icanon 2>/dev/null || true
+  fi
+}
+
 cleanup() {
+  restore_tty
   if [[ -n $BODY_FILE ]]; then
     rm -f "$BODY_FILE"
   fi
 }
+
+cancelled() {
+  restore_tty
+  echo
+  echo "omarchy-wrike-auth: cancelled. Nothing was stored." >&2
+  exit 1
+}
+
 trap cleanup EXIT
+trap cancelled INT TERM
 
 usage() {
   cat <<'USAGE'
@@ -38,6 +58,8 @@ system keyring and read from there at request time.
   --status        Show the connected host and account, never the token
   --clear         Remove the stored credential
   --help          Show this message
+
+During setup, an empty token or Ctrl+C cancels. Nothing is stored.
 USAGE
 }
 
@@ -152,10 +174,17 @@ Create a permanent API token in Wrike:
 The token inherits your own permissions. This plugin only reads tasks,
 spaces, and workflows.
 
+Paste the token and press Enter. The paste is hidden on purpose.
+Empty Enter or Ctrl+C cancels; nothing is stored.
+
 INSTRUCTIONS
-  read -r -s -p "Permanent token (input hidden): " token
+  token=""
+  if ! read -r -s -p "Permanent token (hidden, empty cancels): " token; then
+    cancelled
+  fi
   echo
-  [[ -n ${token:-} ]] || die "a permanent token is required"
+  restore_tty
+  [[ -n ${token:-} ]] || cancelled
 
   local candidate base accepted_base="" accepted_host="" status http_code last_code=""
   BODY_FILE=$(mktemp)

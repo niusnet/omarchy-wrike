@@ -206,7 +206,17 @@ fi
 [[ ! -s "$STUB_DIR/vault" ]] || fail "a token was stored despite a transport failure"
 
 reset_state
-if run_setup "$HOST" "" >/dev/null 2>&1; then fail "an empty token was accepted"; fi
+output=$(run_setup "$HOST" "" 2>&1 || true)
+assert_contains "$output" "cancelled" "an empty token is not described as cancelled"
+[[ ! -s "$STUB_DIR/vault" ]] || fail "an empty token was stored anyway"
+
+has() {
+  local pattern="$1" label="$2"
+  grep -qE "$pattern" "$SCRIPT" || fail "$label"
+}
+
+has 'trap cancelled INT' "Ctrl+C is not trapped as cancel"
+has 'stty echo' "the script never restores terminal echo"
 
 reset_state
 if run_flag --status >/dev/null 2>&1; then
