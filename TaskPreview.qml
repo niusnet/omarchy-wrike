@@ -1,5 +1,6 @@
 import QtQuick
 import qs.Commons
+import qs.Ui
 import "Model.js" as Model
 
 Column {
@@ -21,7 +22,7 @@ Column {
 
   readonly property color muted: Qt.darker(foreground, 1.5)
   readonly property color faint: Qt.darker(foreground, 1.9)
-  readonly property bool inputFocused: commentInput.activeFocus || hoursInput.activeFocus || timeNoteInput.activeFocus
+  readonly property bool inputFocused: commentField.activeFocus || hoursField.activeFocus || noteField.activeFocus
   readonly property string bodyText: {
     if (!ticket)
       return ""
@@ -35,120 +36,145 @@ Column {
   readonly property string pathText: ticket ? Model.breadcrumbText(ticket) : ""
 
   width: parent ? parent.width : 0
-  spacing: Style.space(10)
+  spacing: Style.space(12)
+
+  component SectionLabel: PanelSectionHeader {
+    width: root.width
+    foreground: root.foreground
+    fontFamily: root.fontFamily
+  }
+
+  component MetaRow: Row {
+    property string label: ""
+    property string value: ""
+    width: root.width
+    spacing: Style.space(8)
+    visible: value !== ""
+
+    Text {
+      width: Style.space(72)
+      text: label
+      color: root.faint
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.caption
+    }
+
+    Text {
+      width: parent.width - Style.space(80)
+      text: value
+      color: root.foreground
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.bodySmall
+      wrapMode: Text.WordWrap
+    }
+  }
 
   Row {
     width: parent.width
     spacing: Style.space(8)
 
-    Text {
-      text: qsTr("← Back")
-      color: root.muted
-      font.family: root.fontFamily
-      font.pixelSize: Style.font.caption
-      TapHandler { onTapped: root.backRequested() }
+    Button {
+      text: qsTr("Back to list")
+      foreground: root.foreground
+      fontFamily: root.fontFamily
+      bordered: true
+      onClicked: root.backRequested()
     }
 
-    Text {
+    Button {
       text: qsTr("Open in Wrike")
-      color: root.foreground
+      foreground: root.foreground
+      accent: Color.accent
+      fontFamily: root.fontFamily
+      active: true
+      onClicked: root.openRequested()
+    }
+  }
+
+  Column {
+    width: parent.width
+    spacing: Style.space(4)
+
+    Text {
+      width: parent.width
+      visible: ticket && String(ticket.key || "") !== ""
+      text: ticket ? "#" + String(ticket.key) : ""
+      color: root.faint
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
       font.bold: true
-      TapHandler { onTapped: root.openRequested() }
+    }
+
+    Text {
+      width: parent.width
+      text: ticket ? String(ticket.summary || "") : ""
+      color: root.foreground
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.subtitle
+      font.bold: true
+      wrapMode: Text.WordWrap
+    }
+
+    Text {
+      width: parent.width
+      visible: root.pathText !== ""
+      text: root.pathText
+      color: root.muted
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.bodySmall
+      wrapMode: Text.WordWrap
     }
   }
 
-  Text {
-    width: parent.width
-    text: ticket ? String(ticket.summary || "") : ""
-    color: root.foreground
-    font.family: root.fontFamily
-    font.pixelSize: Style.font.body
-    font.bold: true
-    wrapMode: Text.WordWrap
-  }
+  PanelSeparator { width: parent.width }
 
-  Text {
-    width: parent.width
-    visible: root.pathText !== ""
-    text: root.pathText
-    color: root.muted
-    font.family: root.fontFamily
-    font.pixelSize: Style.font.caption
-    wrapMode: Text.WordWrap
-  }
+  SectionLabel { text: qsTr("DETAILS") }
 
-  Text {
-    width: parent.width
-    color: root.faint
-    font.family: root.fontFamily
-    font.pixelSize: Style.font.caption
-    wrapMode: Text.WordWrap
-    text: {
+  MetaRow { label: qsTr("Space"); value: ticket ? String(ticket.spaceName || "") : "" }
+  MetaRow { label: qsTr("Project"); value: ticket && String(ticket.projectName || "") !== String(ticket.spaceName || "") ? String(ticket.projectName || "") : "" }
+  MetaRow { label: qsTr("Folder"); value: ticket && String(ticket.folderName || "") !== String(ticket.projectName || "") && String(ticket.folderName || "") !== String(ticket.spaceName || "") ? String(ticket.folderName || "") : "" }
+  MetaRow { label: qsTr("Status"); value: ticket ? String(ticket.status || "") : "" }
+  MetaRow { label: qsTr("Type"); value: ticket ? String(ticket.type || "") : "" }
+  MetaRow { label: qsTr("Importance"); value: ticket ? String(ticket.importance || "") : "" }
+  MetaRow { label: qsTr("Start"); value: ticket && ticket.start ? String(ticket.start).slice(0, 10) : "" }
+  MetaRow { label: qsTr("Due"); value: ticket && ticket.due ? String(ticket.due).slice(0, 10) : "" }
+  MetaRow { label: qsTr("Effort"); value: root.effortText }
+  MetaRow {
+    label: qsTr("Attachments")
+    value: {
       if (!ticket)
         return ""
-      var parts = []
-      if (String(ticket.key || "") !== "")
-        parts.push("#" + String(ticket.key))
-      if (String(ticket.status || "") !== "")
-        parts.push(String(ticket.status))
-      if (String(ticket.importance || "") !== "")
-        parts.push(String(ticket.importance))
-      if (String(ticket.start || "") !== "")
-        parts.push(qsTr("start ") + String(ticket.start).slice(0, 10))
-      if (String(ticket.due || "") !== "")
-        parts.push(qsTr("due ") + String(ticket.due).slice(0, 10))
-      if (root.effortText !== "")
-        parts.push(qsTr("effort ") + root.effortText)
-      return parts.join("  ·  ")
+      var count = Number(ticket.attachmentCount || 0)
+      if ((!count || count === 0) && ticket.attachments)
+        count = ticket.attachments.length
+      if (!count)
+        return ticket.hasAttachments ? qsTr("Yes") : ""
+      return String(count)
     }
-  }
-
-  Text {
-    width: parent.width
-    visible: ticket && ticket.hasAttachments
-    text: {
-      var count = ticket && ticket.attachmentCount ? Number(ticket.attachmentCount) : (ticket && ticket.attachments ? ticket.attachments.length : 0)
-      if (count === 1)
-        return qsTr("1 attachment")
-      return count + qsTr(" attachments")
-    }
-    color: root.muted
-    font.family: root.fontFamily
-    font.pixelSize: Style.font.caption
   }
 
   Repeater {
     model: ticket && ticket.attachments ? ticket.attachments : []
 
-    Text {
+    Button {
       required property var modelData
       width: root.width
-      text: String(modelData.name || "Attachment")
-      color: root.foreground
-      font.family: root.fontFamily
-      font.pixelSize: Style.font.caption
-      elide: Text.ElideRight
-      TapHandler {
-        onTapped: {
-          var url = String(modelData.url || "")
-          if (url !== "")
-            Qt.openUrlExternally(url)
-        }
+      text: String(modelData.name || qsTr("Attachment"))
+      foreground: root.foreground
+      fontFamily: root.fontFamily
+      leftAlign: true
+      bordered: true
+      onClicked: {
+        var url = String(modelData.url || "")
+        if (url !== "")
+          Qt.openUrlExternally(url)
       }
     }
   }
 
-  Text {
-    width: parent.width
-    text: qsTr("DESCRIPTION")
-    color: root.faint
-    font.family: root.fontFamily
-    font.pixelSize: Style.font.caption
-    font.bold: true
-    font.letterSpacing: 1
-  }
+  PanelSeparator { width: parent.width }
+
+  SectionLabel { text: qsTr("DESCRIPTION") }
 
   Text {
     width: parent.width
@@ -156,7 +182,7 @@ Column {
     text: qsTr("Loading description")
     color: root.faint
     font.family: root.fontFamily
-    font.pixelSize: Style.font.caption
+    font.pixelSize: Style.font.bodySmall
   }
 
   Text {
@@ -175,72 +201,50 @@ Column {
     text: qsTr("No description on this task.")
     color: root.faint
     font.family: root.fontFamily
-    font.pixelSize: Style.font.caption
+    font.pixelSize: Style.font.bodySmall
   }
 
-  Text {
-    width: parent.width
-    text: qsTr("LOG TIME")
-    color: root.faint
-    font.family: root.fontFamily
-    font.pixelSize: Style.font.caption
-    font.bold: true
-    font.letterSpacing: 1
-  }
+  PanelSeparator { width: parent.width }
+
+  SectionLabel { text: qsTr("LOG TIME") }
 
   Row {
     width: parent.width
-    spacing: Style.space(4)
+    spacing: Style.space(8)
 
-    TextInput {
-      id: hoursInput
-      width: Style.space(36)
-      color: root.foreground
+    TextField {
+      id: hoursField
+      width: Style.space(64)
+      foreground: root.foreground
       font.family: root.fontFamily
-      font.pixelSize: Style.font.bodySmall
+      placeholderText: qsTr("Hours")
       text: "1"
     }
 
-    TextInput {
-      id: timeNoteInput
-      width: parent.width - hoursInput.width - Style.space(20)
-      color: root.foreground
+    TextField {
+      id: noteField
+      width: parent.width - hoursField.width - logButton.width - Style.space(20)
+      foreground: root.foreground
       font.family: root.fontFamily
-      font.pixelSize: Style.font.bodySmall
-      Text {
-        anchors.verticalCenter: parent.verticalCenter
-        visible: timeNoteInput.text === "" && !timeNoteInput.activeFocus
-        text: qsTr("Note (optional)")
-        color: root.faint
-        font.family: root.fontFamily
-        font.pixelSize: Style.font.caption
-      }
+      placeholderText: qsTr("Note (optional)")
     }
-  }
 
-  Text {
-    text: root.posting ? qsTr("Saving") : qsTr("Log hours")
-    color: root.foreground
-    font.family: root.fontFamily
-    font.pixelSize: Style.font.caption
-    font.bold: true
-    TapHandler {
-      onTapped: {
+    Button {
+      id: logButton
+      text: root.posting ? qsTr("Saving") : qsTr("Log time")
+      foreground: root.foreground
+      fontFamily: root.fontFamily
+      bordered: true
+      onClicked: {
         if (!root.posting)
-          root.timeRequested(hoursInput.text, timeNoteInput.text)
+          root.timeRequested(hoursField.text, noteField.text)
       }
     }
   }
 
-  Text {
-    width: parent.width
-    text: qsTr("COMMENTS")
-    color: root.faint
-    font.family: root.fontFamily
-    font.pixelSize: Style.font.caption
-    font.bold: true
-    font.letterSpacing: 1
-  }
+  PanelSeparator { width: parent.width }
+
+  SectionLabel { text: qsTr("COMMENTS") }
 
   Repeater {
     model: root.commentPage.items
@@ -248,14 +252,15 @@ Column {
     Column {
       required property var modelData
       width: root.width
-      spacing: Style.space(1)
+      spacing: Style.space(2)
 
       Text {
         width: parent.width
-        text: String(modelData.author || "") + "  ·  " + Model.relativeTime(modelData.created, Date.now())
+        text: String(modelData.author || qsTr("Someone")) + "  ·  " + Model.relativeTime(modelData.created, Date.now())
         color: root.faint
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
+        font.bold: true
       }
 
       Text {
@@ -275,49 +280,36 @@ Column {
     text: qsTr("No comments yet.")
     color: root.faint
     font.family: root.fontFamily
-    font.pixelSize: Style.font.caption
-  }
-
-  Text {
-    visible: root.commentPage.remaining > 0
-    text: qsTr("Load more comments") + " (" + root.commentPage.remaining + ")"
-    color: root.foreground
-    font.family: root.fontFamily
-    font.pixelSize: Style.font.caption
-    font.bold: true
-    TapHandler { onTapped: root.moreCommentsRequested() }
-  }
-
-  TextInput {
-    id: commentInput
-    width: parent.width
-    color: root.foreground
-    font.family: root.fontFamily
     font.pixelSize: Style.font.bodySmall
-    wrapMode: TextInput.Wrap
-    Text {
-      anchors.verticalCenter: parent.verticalCenter
-      visible: commentInput.text === "" && !commentInput.activeFocus
-      text: qsTr("Write a comment")
-      color: root.faint
-      font.family: root.fontFamily
-      font.pixelSize: Style.font.caption
-    }
   }
 
-  Text {
-    text: root.posting ? qsTr("Sending") : qsTr("Send comment")
-    color: root.foreground
+  Button {
+    visible: root.commentPage.remaining > 0
+    text: qsTr("Load more") + " · " + root.commentPage.remaining
+    foreground: root.foreground
+    fontFamily: root.fontFamily
+    bordered: true
+    onClicked: root.moreCommentsRequested()
+  }
+
+  TextField {
+    id: commentField
+    width: parent.width
+    foreground: root.foreground
     font.family: root.fontFamily
-    font.pixelSize: Style.font.caption
-    font.bold: true
-    TapHandler {
-      onTapped: {
-        if (root.posting || commentInput.text.trim() === "")
-          return
-        root.commentRequested(commentInput.text)
-        commentInput.text = ""
-      }
+    placeholderText: qsTr("Write a comment")
+  }
+
+  Button {
+    text: root.posting ? qsTr("Sending") : qsTr("Send comment")
+    foreground: root.foreground
+    fontFamily: root.fontFamily
+    active: true
+    onClicked: {
+      if (root.posting || commentField.text.trim() === "")
+        return
+      root.commentRequested(commentField.text)
+      commentField.text = ""
     }
   }
 

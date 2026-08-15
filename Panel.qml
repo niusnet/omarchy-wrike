@@ -23,7 +23,7 @@ Panel {
 
   readonly property var followedSpaces: wrike.followedSpaces
   readonly property string listFilter: Model.normalizeFilter(wrike.setting("listFilter", "all"))
-  readonly property string groupBy: Model.normalizeGroupBy(wrike.setting("groupBy", "status"))
+  readonly property string groupBy: Model.normalizeGroupBy(wrike.setting("groupBy", "space"))
 
   property int weekTick: 0
   readonly property var weekBars: {
@@ -232,8 +232,8 @@ Panel {
     bar: root.bar
     open: root.opened
     focusTarget: keyCatcher
-    contentWidth: panel.fittedContentWidth(Style.space(root.showPreview ? 560 : 420))
-    contentHeight: panel.fittedContentHeight(content.implicitHeight, Style.space(root.showPreview ? 760 : 640))
+    contentWidth: panel.fittedContentWidth(Style.space(root.showPreview ? 720 : 440))
+    contentHeight: panel.fittedContentHeight(content.implicitHeight, Style.space(root.showPreview ? 820 : 640))
 
     PanelKeyCatcher {
       id: keyCatcher

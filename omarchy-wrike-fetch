@@ -301,42 +301,17 @@ fetch_completed_week() {
   fi
 }
 
-# Folder IDs on a task are not space IDs. Walk each space's folder tree so
-# grouping and breadcrumbs can name the space and the project above the task.
+# Account folder tree is one call. Do not request extra fields: this account
+# rejects `fields=project` with 400, and the tree items have no parentIds.
+# Hierarchy is recovered from childIds.
 fetch_folder_index() {
   FOLDERS_FILE=$(mktemp)
   printf '{"data":[]}' >"$FOLDERS_FILE"
-  local pages=() page space_id code status=0
-  page=$(mktemp)
-  code=$(api_request "$token" "$base/folders" "$page" --get \
-    --data-urlencode "deleted=false" \
-    --data-urlencode 'fields=["project"]') || status=$?
-  if ((status == 0)) && [[ $code == 200 ]] && jq -e . >/dev/null 2>&1 <"$page"; then
-    pages+=("$page")
-  else
-    rm -f "$page"
+  local status=0 code
+  code=$(api_request "$token" "$base/folders" "$FOLDERS_FILE") || status=$?
+  if ((status != 0)) || [[ $code != 200 ]] || ! jq -e . >/dev/null 2>&1 <"$FOLDERS_FILE"; then
+    printf '{"data":[]}' >"$FOLDERS_FILE"
   fi
-
-  if [[ -s $SPACES_FILE ]]; then
-    while IFS= read -r space_id; do
-      [[ -n $space_id ]] || continue
-      page=$(mktemp)
-      status=0
-      code=$(api_request "$token" "$base/folders/$space_id/folders" "$page" --get \
-        --data-urlencode "descendants=true" \
-        --data-urlencode 'fields=["project"]') || status=$?
-      if ((status == 0)) && [[ $code == 200 ]] && jq -e . >/dev/null 2>&1 <"$page"; then
-        pages+=("$page")
-      else
-        rm -f "$page"
-      fi
-    done < <(jq -r '.data[]?.id // empty' <"$SPACES_FILE" 2>/dev/null || true)
-  fi
-
-  merge_task_pages "$FOLDERS_FILE" "${pages[@]+"${pages[@]}"}"
-  for page in "${pages[@]+"${pages[@]}"}"; do
-    rm -f "$page"
-  done
 }
 
 fetch_preview_extras() {
@@ -719,6 +694,10 @@ jq -n \
       | from_entries
     ) as $folderById
   | (
+      [ ($folders[0].data // [])[] | . as $folder | (($folder.childIds // [])[] | {key: ., value: $folder.id}) ]
+      | from_entries
+    ) as $parentByChild
+  | (
       [ ($contacts[0].data // [])[] | {key: .id, value: (([.firstName // "", .lastName // ""] | map(select(. != "")) | join(" ")) )} ]
       | from_entries
     ) as $contactById
@@ -727,21 +706,22 @@ jq -n \
       | if . == "" then [] else split(",") end
     ) as $followed
 
-  | def up($id):
-      if $id == null or $id == "" then empty
-      elif $spaceById[$id] != null then $id
-      elif $folderById[$id] != null then
-        $id,
-        up((($folderById[$id].parentIds // [])[0]))
-      else empty
-      end;
+  | def is_project($folder):
+      ($folder.project != null) and ($folder.project != false);
+
+  def up($id):
+    if $id == null or $id == "" then empty
+    else
+      $id,
+      (if $spaceById[$id] != null then empty else up($parentByChild[$id]) end)
+    end;
 
   def locate:
     ((.parentIds // []) + (.superParentIds // [])) as $starts
     | [ $starts[] | up(.) ] as $chain
     | {
         space: ([ $chain[] | $spaceById[.] | select(. != null) ] | .[0] // null),
-        project: ([ $chain[] | $folderById[.] | select(. != null and .project != null) ] | .[0] // null),
+        project: ([ $chain[] | $folderById[.] | select(. != null and is_project(.)) ] | .[0] // null),
         folder: ($folderById[$starts[0]] // null),
         chain: $chain
       };

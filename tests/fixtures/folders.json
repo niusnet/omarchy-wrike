@@ -1,14 +1,30 @@
 {
-  "kind": "folders",
+  "kind": "folderTree",
   "data": [
-    { "id": "IEAAAADEMO000001", "title": "Demo", "parentIds": [] },
+    {
+      "id": "IEAAAADEMO000001",
+      "title": "Demo",
+      "childIds": ["IEAAAAFOLDERWEB"],
+      "scope": "WsFolder"
+    },
     {
       "id": "IEAAAAFOLDERWEB",
       "title": "Website Redesign",
-      "parentIds": ["IEAAAADEMO000001"],
-      "project": { "startDate": "2026-08-01" }
+      "childIds": [],
+      "scope": "WsFolder",
+      "project": { "authorId": "KUAAAAAA", "createdDate": "2026-08-01T00:00:00Z" }
     },
-    { "id": "IEAAAAOPS0000002", "title": "Operations", "parentIds": [] },
-    { "id": "IEAAAAFOLDEROPS", "title": "Admin", "parentIds": ["IEAAAAOPS0000002"] }
+    {
+      "id": "IEAAAAOPS0000002",
+      "title": "Operations",
+      "childIds": ["IEAAAAFOLDEROPS"],
+      "scope": "WsFolder"
+    },
+    {
+      "id": "IEAAAAFOLDEROPS",
+      "title": "Admin",
+      "childIds": [],
+      "scope": "WsFolder"
+    }
   ]
 }

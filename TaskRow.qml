@@ -107,12 +107,14 @@ Rectangle {
           if (!root.ticket)
             return ""
           var parts = []
+          if (String(root.ticket.spaceName || "") !== "")
+            parts.push(String(root.ticket.spaceName))
+          if (String(root.ticket.projectName || "") !== "" && String(root.ticket.projectName) !== String(root.ticket.spaceName || ""))
+            parts.push(String(root.ticket.projectName))
           if (String(root.ticket.status || "") !== "")
             parts.push(String(root.ticket.status))
           if (String(root.ticket.age || "") !== "")
             parts.push(String(root.ticket.age))
-          if (root.remote && String(root.ticket.projectName || "") !== "")
-            parts.push(String(root.ticket.projectName))
           return parts.join("  ·  ")
         }
       }
