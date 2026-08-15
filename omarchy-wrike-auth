@@ -56,6 +56,8 @@ system keyring and read from there at request time.
 
   (no arguments)  Interactive setup: host, permanent token
   --status        Show the connected host and account, never the token
+  --connect       Read {"host","token"} from stdin and store the credential
+  --disconnect    Remove the stored credential (same as --clear)
   --clear         Remove the stored credential
   --help          Show this message
 
@@ -128,7 +130,11 @@ cmd_status() {
 cmd_clear() {
   require_tool secret-tool
   secret-tool clear service "$SERVICE"
-  echo "Credential removed."
+  echo "Signed out. Credential removed."
+}
+
+cmd_disconnect() {
+  cmd_clear
 }
 
 # Validates the credential against one base URL before anything is stored, so a
@@ -153,37 +159,12 @@ candidate_hosts() {
   done
 }
 
-cmd_setup() {
-  require_tool curl
-  require_tool secret-tool
-  require_tool jq
-
-  local host token
-  read -r -p "Wrike host [www.wrike.com, or eu / us2]: " host
+# Validates and stores a host+token pair. Used by the interactive setup and by
+# --connect, which the panel uses so the token never has to sit in argv.
+connect_and_store() {
+  local host="$1" token="$2"
   host=$(normalize_host "${host:-}")
   [[ -n $host ]] || die "a host is required"
-
-  cat <<INSTRUCTIONS
-
-Create a permanent API token in Wrike:
-  1. Open $TOKEN_PAGE
-  2. Profile → Apps & Integrations → API
-  3. Create an app if you do not have one
-  4. Generate a Permanent access token
-
-The token inherits your own permissions. This plugin only reads tasks,
-spaces, and workflows.
-
-Paste the token and press Enter. The paste is hidden on purpose.
-Empty Enter or Ctrl+C cancels; nothing is stored.
-
-INSTRUCTIONS
-  token=""
-  if ! read -r -s -p "Permanent token (hidden, empty cancels): " token; then
-    cancelled
-  fi
-  echo
-  restore_tty
   [[ -n ${token:-} ]] || cancelled
 
   local candidate base accepted_base="" accepted_host="" status http_code last_code=""
@@ -207,8 +188,6 @@ INSTRUCTIONS
       ;;
     401 | 403)
       last_code="$http_code"
-      # A rejected token will fail on every host the same way. Do not keep
-      # trying other datacenters after a clear auth failure.
       break
       ;;
     *)
@@ -245,9 +224,6 @@ INSTRUCTIONS
   ' <"$BODY_FILE" 2>/dev/null || true)
   [[ -n $email ]] || email="$user_id"
 
-  # jq builds the document so a token containing a quote or a backslash cannot
-  # produce malformed JSON, and the result is piped straight into the keyring
-  # without ever touching a file or an argument.
   jq -nc --arg host "$accepted_host" --arg account "$email" --arg base "$accepted_base" \
     --arg userId "$user_id" --arg displayName "$display_name" \
     --rawfile token <(printf '%s' "$token") \
@@ -269,10 +245,60 @@ INSTRUCTIONS
   echo "The token is in your system keyring. It is not stored anywhere else."
 }
 
+# One JSON object on stdin: {"host":"...","token":"..."}. The panel uses this
+# so the token never appears in a command line.
+cmd_connect() {
+  require_tool curl
+  require_tool secret-tool
+  require_tool jq
+
+  local line host token
+  IFS= read -r line || true
+  [[ -n ${line:-} ]] || cancelled
+  host=$(printf '%s' "$line" | jq -r '.host // empty' 2>/dev/null || true)
+  token=$(printf '%s' "$line" | jq -r '.token // empty' 2>/dev/null || true)
+  connect_and_store "$host" "$token"
+}
+
+cmd_setup() {
+  require_tool curl
+  require_tool secret-tool
+  require_tool jq
+
+  local host token
+  read -r -p "Wrike host [www.wrike.com, or eu / us2]: " host
+  host=$(normalize_host "${host:-}")
+  [[ -n $host ]] || die "a host is required"
+
+  cat <<INSTRUCTIONS
+
+Create a permanent API token in Wrike:
+  1. Open $TOKEN_PAGE
+  2. Profile → Apps & Integrations → API
+  3. Create an app if you do not have one
+  4. Generate a Permanent access token
+
+The token inherits your own permissions. This plugin only reads tasks,
+spaces, and workflows.
+
+Paste the token and press Enter. The paste is hidden on purpose.
+Empty Enter or Ctrl+C cancels; nothing is stored.
+
+INSTRUCTIONS
+  token=""
+  if ! read -r -s -p "Permanent token (hidden, empty cancels): " token; then
+    cancelled
+  fi
+  echo
+  restore_tty
+  connect_and_store "$host" "$token"
+}
+
 main() {
   case "${1:-}" in
   --status) cmd_status ;;
-  --clear) cmd_clear ;;
+  --clear | --disconnect) cmd_clear ;;
+  --connect) cmd_connect ;;
   -h | --help) usage ;;
   "") cmd_setup ;;
   *) die "unknown option: $1" ;;

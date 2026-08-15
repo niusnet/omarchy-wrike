@@ -167,6 +167,7 @@ assert_jq '.tickets[0].statusCategory == "indeterminate"' "$payload" "started pl
 assert_jq '.tickets[0].projectKey == "IEAAAADEMO000001"' "$payload" "space id missing"
 assert_jq '.tickets[0].projectName == "Demo"' "$payload" "space name missing"
 assert_jq '.tickets[0].url == "https://'"$HOST"'/open.htm?id=101"' "$payload" "permalink is wrong"
+assert_jq '.tickets[0].brief == "Raise the card limit before Friday."' "$payload" "brief description missing"
 
 # Review is a custom status name; the category comes from started + Active.
 assert_jq '[.tickets[] | select(.key == "102")][0].status == "Review"' "$payload" "Review name lost"
@@ -233,6 +234,14 @@ payload=$(run_helper --search 109) || fail "helper failed on a permalink search"
 assert_jq '.tickets[0].key == "109"' "$payload" "permalink search missed the converted id"
 assert_contains "$(cat "$STUB_DIR/urls")" "/ids" "permalink search did not convert the id"
 assert_contains "$(cat "$STUB_DIR/urls")" "/tasks/IEAAAAAOKQAAAAA9" "converted id was not fetched"
+
+reset_state
+store_credential
+payload=$(run_helper --task IEAAAAAOKQAAAAA9) || fail "helper failed on --task"
+assert_jq '.mode == "preview"' "$payload" "mode is not preview"
+assert_jq '.tickets[0].key == "109"' "$payload" "preview missed the task"
+assert_jq '.tickets[0].description | test("Check line 4")' "$payload" "preview is missing the description"
+assert_contains "$(cat "$STUB_DIR/urls")" "/tasks/IEAAAAAOKQAAAAA9" "preview did not fetch the task"
 
 reset_state
 store_credential

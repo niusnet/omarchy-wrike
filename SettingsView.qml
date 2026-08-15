@@ -18,11 +18,17 @@ Column {
   property var weekBars: []
   property string dueCoverage: ""
   property var doneStatuses: []
+  property bool connecting: false
+  property string authMessage: ""
 
   signal spaceToggled(string key)
   signal allSpacesCleared()
   signal weekBarToggled(string id)
   signal doneStatusToggled(string name)
+  signal connectRequested(string host, string token)
+  signal disconnectRequested()
+
+  readonly property bool inputFocused: hostInput.activeFocus || tokenInput.activeFocus
 
   readonly property color muted: Qt.darker(foreground, 1.5)
   readonly property color faint: Qt.darker(foreground, 1.9)
@@ -251,13 +257,77 @@ Column {
     font.pixelSize: Style.font.caption
     wrapMode: Text.WordWrap
     text: {
+      if (root.authMessage !== "")
+        return root.authMessage
       if (root.state === "unconfigured")
-        return qsTr("Not connected. Run omarchy-wrike-auth in a terminal.")
+        return qsTr("Not connected. Paste a permanent token below.")
       if (root.state === "unauthorized")
-        return qsTr("The stored token was rejected. Run omarchy-wrike-auth again.")
+        return qsTr("The stored token was rejected. Paste a new one below.")
       if (root.site === "")
         return qsTr("Not connected.")
       return root.site + "\n" + root.account
     }
+  }
+
+  TextInput {
+    id: hostInput
+
+    width: parent.width
+    color: root.foreground
+    font.family: root.fontFamily
+    font.pixelSize: Style.font.bodySmall
+    text: root.site !== "" ? root.site : "www.wrike.com"
+    selectByMouse: true
+    clip: true
+
+    Text {
+      anchors.verticalCenter: parent.verticalCenter
+      visible: hostInput.text === ""
+      text: qsTr("Host: www.wrike.com, eu, or us2")
+      color: root.faint
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.bodySmall
+    }
+  }
+
+  TextInput {
+    id: tokenInput
+
+    width: parent.width
+    color: root.foreground
+    font.family: root.fontFamily
+    font.pixelSize: Style.font.bodySmall
+    echoMode: TextInput.Password
+    selectByMouse: true
+    clip: true
+
+    Text {
+      anchors.verticalCenter: parent.verticalCenter
+      visible: tokenInput.text === "" && !tokenInput.activeFocus
+      text: qsTr("Permanent token")
+      color: root.faint
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.bodySmall
+    }
+  }
+
+  ToggleRow {
+    label: root.connecting ? qsTr("Connecting") : qsTr("Connect")
+    hint: qsTr("Validates the token and stores it in the keyring")
+    checked: false
+    onActivated: {
+      if (root.connecting)
+        return
+      root.connectRequested(hostInput.text, tokenInput.text)
+      tokenInput.text = ""
+    }
+  }
+
+  ToggleRow {
+    visible: root.state === "ok" || root.site !== ""
+    label: qsTr("Sign out")
+    hint: qsTr("Removes the token from this machine")
+    checked: false
+    onActivated: root.disconnectRequested()
   }
 }

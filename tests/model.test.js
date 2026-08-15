@@ -3,11 +3,11 @@ const assert = require('node:assert')
 const Model = require('../Model.js')
 
 const TASKS = [
-  { key: '101', summary: 'Refresh card limit', status: 'In Progress', statusCategory: 'indeterminate', projectKey: 'IEAAAADEMO000001', updated: '2026-08-14T06:24:20Z' },
-  { key: '102', summary: 'Retry failed supplier payments', status: 'Review', statusCategory: 'indeterminate', projectKey: 'IEAAAADEMO000001', updated: '2026-08-12T11:02:00Z' },
-  { key: '103', summary: 'Freeze lock files', status: 'New', statusCategory: 'new', projectKey: 'IEAAAADEMO000001', updated: '2026-06-12T16:29:09Z' },
-  { key: '104', summary: 'Duplicate group members', status: 'Deferred', statusCategory: 'new', projectKey: 'IEAAAAOPS0000002', updated: '2026-05-02T09:15:00Z' },
-  { key: '105', summary: 'Traveler names', status: 'Completed', statusCategory: 'done', projectKey: 'IEAAAADEMO000001', updated: '2026-02-09T14:27:44Z' }
+  { key: '101', summary: 'Refresh card limit', status: 'In Progress', statusCategory: 'indeterminate', projectKey: 'IEAAAADEMO000001', projectName: 'Demo', updated: '2026-08-14T06:24:20Z' },
+  { key: '102', summary: 'Retry failed supplier payments', status: 'Review', statusCategory: 'indeterminate', projectKey: 'IEAAAADEMO000001', projectName: 'Demo', updated: '2026-08-12T11:02:00Z' },
+  { key: '103', summary: 'Freeze lock files', status: 'New', statusCategory: 'new', projectKey: 'IEAAAADEMO000001', projectName: 'Demo', updated: '2026-06-12T16:29:09Z' },
+  { key: '104', summary: 'Duplicate group members', status: 'Deferred', statusCategory: 'new', projectKey: 'IEAAAAOPS0000002', projectName: 'Ops', updated: '2026-05-02T09:15:00Z' },
+  { key: '105', summary: 'Traveler names', status: 'Completed', statusCategory: 'done', projectKey: 'IEAAAADEMO000001', projectName: 'Demo', updated: '2026-02-09T14:27:44Z' }
 ]
 
 test('groupTickets puts started work in waiting and the rest in assigned', () => {
@@ -272,4 +272,44 @@ test('limit caps the list and ignores a broken setting', () => {
   assert.equal(Model.limit(TASKS, 0).length, TASKS.length)
   assert.equal(Model.limit(TASKS, -5).length, TASKS.length)
   assert.deepEqual(Model.limit(null, 5), [])
+})
+
+test('stripHtml turns markup into readable text', () => {
+  assert.equal(Model.stripHtml('<p>Hello<br>world</p>'), 'Hello\nworld')
+  assert.equal(Model.stripHtml('A &amp; B &lt;C&gt;'), 'A & B <C>')
+  assert.equal(Model.stripHtml(''), '')
+})
+
+test('applyListFilter keeps only the asked group', () => {
+  const now = Date.parse('2026-08-14T12:00:00Z')
+  const withDue = TASKS.map(t => Object.assign({}, t, {
+    due: t.key === '102' ? '2026-08-08' : t.key === '103' ? '2026-08-20' : ''
+  }))
+  assert.deepEqual(Model.applyListFilter(withDue, 'progress', now).map(t => t.key), ['101', '102'])
+  assert.deepEqual(Model.applyListFilter(withDue, 'todo', now).map(t => t.key), ['103', '104'])
+  assert.deepEqual(Model.applyListFilter(withDue, 'overdue', now).map(t => t.key), ['102'])
+  assert.equal(Model.applyListFilter(withDue, 'all', now).length, withDue.length)
+})
+
+test('groupBySpace clusters by space name and sorts them', () => {
+  const groups = Model.groupBySpace([
+    { key: '2', projectName: 'Ops', projectKey: 'OPS' },
+    { key: '1', projectName: 'Demo', projectKey: 'DEMO' },
+    { key: '3', projectName: 'Demo', projectKey: 'DEMO' }
+  ])
+  assert.deepEqual(groups.map(g => g.title), ['Demo', 'Ops'])
+  assert.deepEqual(groups[0].tickets.map(t => t.key), ['1', '3'])
+})
+
+test('listSections can group by status or by space', () => {
+  const byStatus = Model.listSections(TASKS, 'status', 'all', 25)
+  assert.deepEqual(byStatus.map(s => s.title), ['IN PROGRESS', 'TO DO'])
+  const bySpace = Model.listSections(TASKS, 'space', 'progress', 25)
+  assert.deepEqual(bySpace.map(s => s.title), ['Demo'])
+  assert.deepEqual(bySpace[0].tickets.map(t => t.key), ['101', '102'])
+})
+
+test('flattenSections walks sections in display order', () => {
+  const flat = Model.flattenSections(Model.listSections(TASKS, 'status', 'all', 25))
+  assert.deepEqual(flat.map(t => t.key), ['101', '102', '103', '104'])
 })

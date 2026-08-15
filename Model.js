@@ -433,6 +433,148 @@ function limit(tickets, max) {
   return list.slice(0, cap)
 }
 
+function stripHtml(value) {
+  var html = text(value)
+  if (html === "")
+    return ""
+  html = html.replace(/<\s*br\s*\/?\s*>/gi, "\n")
+  html = html.replace(/<\s*\/\s*p\s*>/gi, "\n")
+  html = html.replace(/<[^>]+>/g, "")
+  html = html.replace(/&nbsp;/gi, " ")
+  html = html.replace(/&amp;/gi, "&")
+  html = html.replace(/&lt;/gi, "<")
+  html = html.replace(/&gt;/gi, ">")
+  html = html.replace(/&quot;/gi, "\"")
+  html = html.replace(/\n{3,}/g, "\n\n")
+  return html.trim()
+}
+
+function normalizeFilter(value) {
+  var wanted = text(value).trim().toLowerCase()
+  if (wanted === "progress" || wanted === "in-progress" || wanted === "inprogress")
+    return "progress"
+  if (wanted === "todo" || wanted === "to-do" || wanted === "assigned")
+    return "todo"
+  if (wanted === "overdue")
+    return "overdue"
+  return "all"
+}
+
+function normalizeGroupBy(value) {
+  var wanted = text(value).trim().toLowerCase()
+  return wanted === "space" ? "space" : "status"
+}
+
+function dueMs(ticket) {
+  var raw = text(ticket && ticket.due)
+  if (raw === "")
+    return NaN
+  if (raw.indexOf("T") === -1)
+    raw += "T00:00:00Z"
+  return Date.parse(raw)
+}
+
+function isOverdue(ticket, nowMs) {
+  if (!ticket || text(ticket.statusCategory) === CATEGORY_DONE)
+    return false
+  var due = dueMs(ticket)
+  if (!isFinite(due))
+    return false
+  return due < (isFinite(nowMs) ? nowMs : Date.now())
+}
+
+function applyListFilter(tickets, filter, nowMs) {
+  var list = asArray(tickets)
+  var wanted = normalizeFilter(filter)
+  if (wanted === "all")
+    return list.slice()
+
+  var out = []
+  for (var i = 0; i < list.length; i++) {
+    var ticket = list[i]
+    if (wanted === "progress") {
+      if (text(ticket.statusCategory) === CATEGORY_WAITING)
+        out.push(ticket)
+    } else if (wanted === "todo") {
+      if (text(ticket.statusCategory) !== CATEGORY_WAITING && text(ticket.statusCategory) !== CATEGORY_DONE)
+        out.push(ticket)
+    } else if (wanted === "overdue") {
+      if (isOverdue(ticket, nowMs))
+        out.push(ticket)
+    }
+  }
+  return out
+}
+
+function groupBySpace(tickets) {
+  var list = asArray(tickets)
+  var groups = []
+  var indexByName = {}
+  for (var i = 0; i < list.length; i++) {
+    var name = text(list[i] && list[i].projectName)
+    if (name === "")
+      name = text(list[i] && list[i].projectKey)
+    if (name === "")
+      name = "Other"
+    if (indexByName[name] === undefined) {
+      indexByName[name] = groups.length
+      groups.push({ title: name, tickets: [] })
+    }
+    groups[indexByName[name]].tickets.push(list[i])
+  }
+  groups.sort(function (left, right) {
+    if (left.title < right.title)
+      return -1
+    if (left.title > right.title)
+      return 1
+    return 0
+  })
+  return groups
+}
+
+function statusSections(tickets, max) {
+  var groups = groupTickets(tickets)
+  return [
+    { title: "IN PROGRESS", tickets: limit(groups.waiting, max) },
+    { title: "TO DO", tickets: limit(groups.assigned, max) }
+  ]
+}
+
+function listSections(tickets, groupBy, filter, max, nowMs) {
+  var filtered = applyListFilter(tickets, filter, nowMs)
+  if (normalizeGroupBy(groupBy) === "space") {
+    var spaces = groupBySpace(filtered)
+    var out = []
+    for (var i = 0; i < spaces.length; i++)
+      out.push({ title: spaces[i].title, tickets: limit(spaces[i].tickets, max) })
+    return out
+  }
+  return statusSections(filtered, max)
+}
+
+function decorateSections(sections, nowMs) {
+  var list = asArray(sections)
+  var out = []
+  for (var i = 0; i < list.length; i++) {
+    out.push({
+      title: text(list[i] && list[i].title),
+      tickets: decorateRows(list[i] && list[i].tickets, nowMs)
+    })
+  }
+  return out
+}
+
+function flattenSections(sections) {
+  var list = asArray(sections)
+  var out = []
+  for (var i = 0; i < list.length; i++) {
+    var rows = asArray(list[i] && list[i].tickets)
+    for (var j = 0; j < rows.length; j++)
+      out.push(rows[j])
+  }
+  return out
+}
+
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     groupTickets: groupTickets,
@@ -452,6 +594,15 @@ if (typeof module !== "undefined" && module.exports) {
     idList: idList,
     toggleWeekBar: toggleWeekBar,
     toggleFollowedSpace: toggleFollowedSpace,
-    limit: limit
+    limit: limit,
+    stripHtml: stripHtml,
+    normalizeFilter: normalizeFilter,
+    normalizeGroupBy: normalizeGroupBy,
+    isOverdue: isOverdue,
+    applyListFilter: applyListFilter,
+    groupBySpace: groupBySpace,
+    listSections: listSections,
+    decorateSections: decorateSections,
+    flattenSections: flattenSections
   }
 }

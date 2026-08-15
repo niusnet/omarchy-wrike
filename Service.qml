@@ -27,9 +27,20 @@ Item {
   property string searchQuery: ""
   property string answeredQuery: ""
 
+  property var previewTicket: null
+  property bool previewLoading: false
+  property string previewKey: ""
+
+  property bool connecting: false
+  property string authMessage: ""
+
   property bool refreshQueued: false
   property string _stdout: ""
   property string _searchStdout: ""
+  property string _authStdout: ""
+  property string _authStderr: ""
+  property string _previewStdout: ""
+  property string _authPayload: ""
 
   readonly property var groups: Model.groupTickets(tickets)
   readonly property int waitingCount: groups.waiting.length
@@ -61,6 +72,10 @@ Item {
 
   function helperPath() {
     return Qt.resolvedUrl("omarchy-wrike-fetch").toString().replace(/^file:\/\//, "")
+  }
+
+  function authPath() {
+    return Qt.resolvedUrl("omarchy-wrike-auth").toString().replace(/^file:\/\//, "")
   }
 
   readonly property var followedSpaces: Model.spaceList(setting("followedSpaces", []))
@@ -111,8 +126,15 @@ Item {
     if (String(data.account || "") !== "")
       account = String(data.account)
 
-    if (state !== "ok")
+    if (state !== "ok") {
+      if (state === "unconfigured") {
+        tickets = []
+        projects = []
+        week = null
+        weekState = "off"
+      }
       return
+    }
 
     tickets = Array.isArray(data.tickets) ? data.tickets : []
     projects = Array.isArray(data.projects) ? data.projects : []
@@ -153,6 +175,63 @@ Item {
       searchResults = []
     }
     answeredQuery = String(query || "")
+  }
+
+  function connectAccount(host, token) {
+    if (String(token || "").trim() === "") {
+      authMessage = qsTr("Paste a token first.")
+      return
+    }
+    if (authProcess.running)
+      authProcess.running = false
+    connecting = true
+    authMessage = qsTr("Connecting")
+    _authStdout = ""
+    _authPayload = JSON.stringify({ host: String(host || ""), token: String(token || "") })
+    authProcess.command = [authPath(), "--connect"]
+    authProcess.running = true
+  }
+
+  function disconnectAccount() {
+    if (authProcess.running)
+      authProcess.running = false
+    connecting = true
+    authMessage = qsTr("Signing out")
+    _authStdout = ""
+    _authPayload = ""
+    authProcess.command = [authPath(), "--disconnect"]
+    authProcess.running = true
+  }
+
+  function preview(taskId, fallback) {
+    previewKey = String(taskId || "")
+    previewTicket = fallback || null
+    if (previewKey === "")
+      return
+    if (previewProcess.running)
+      previewProcess.running = false
+    previewLoading = true
+    _previewStdout = ""
+    previewProcess.command = [helperPath(), "--task", previewKey]
+    previewProcess.running = true
+  }
+
+  function clearPreview() {
+    previewKey = ""
+    previewTicket = null
+    previewLoading = false
+    if (previewProcess.running)
+      previewProcess.running = false
+  }
+
+  function applyPreview(raw) {
+    previewLoading = false
+    try {
+      var data = JSON.parse(String(raw || ""))
+      if (String(data.state || "") === "ok" && Array.isArray(data.tickets) && data.tickets.length > 0)
+        previewTicket = data.tickets[0]
+    } catch (error) {
+    }
   }
 
   visible: false
@@ -207,6 +286,60 @@ Item {
 
       waitForEnd: true
       onStreamFinished: root._searchStdout = text
+    }
+  }
+
+  Process {
+    id: authProcess
+
+    running: false
+    command: []
+    stdinEnabled: true
+    onStarted: {
+      if (root._authPayload !== "")
+        write(root._authPayload + "\n")
+      root._authPayload = ""
+    }
+    onExited: function (exitCode) {
+      root.connecting = false
+      var output = String(authCollector.text || root._authStdout || "").trim()
+      var err = String(authErr.text || root._authStderr || "").trim()
+      root.authMessage = output !== "" ? output : err
+      if (exitCode === 0)
+        root.refresh()
+      else if (root.authMessage === "")
+        root.authMessage = qsTr("Could not update the Wrike session.")
+    }
+
+    stdout: StdioCollector {
+      id: authCollector
+
+      waitForEnd: true
+      onStreamFinished: root._authStdout = text
+    }
+
+    stderr: StdioCollector {
+      id: authErr
+
+      waitForEnd: true
+      onStreamFinished: root._authStderr = text
+    }
+  }
+
+  Process {
+    id: previewProcess
+
+    running: false
+    command: []
+    onExited: function (exitCode) {
+      root.applyPreview(String(previewCollector.text || root._previewStdout || ""))
+    }
+
+    stdout: StdioCollector {
+      id: previewCollector
+
+      waitForEnd: true
+      onStreamFinished: root._previewStdout = text
     }
   }
 }

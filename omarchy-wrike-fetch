@@ -21,6 +21,7 @@ readonly DEFAULT_MAX=100
 
 mode="dashboard"
 search_query=""
+task_id=""
 want_week=0
 spaces_filter=""
 max_results="$DEFAULT_MAX"
@@ -46,6 +47,7 @@ usage() {
   cat <<'USAGE'
 Usage: omarchy-wrike-fetch [--spaces ID[,ID...]] [--max N] [--week]
        omarchy-wrike-fetch --search QUERY
+       omarchy-wrike-fetch --task ID
 
 Prints one JSON document describing the tasks assigned to the connected
 account, or the tasks matching a search. Run omarchy-wrike-auth first to
@@ -53,6 +55,7 @@ connect an account.
 
   --spaces   Restrict the dashboard to these space ids
   --search   Search the whole account by permalink id or title
+  --task     Fetch one task for the in-panel preview
   --week     Also report this week's progress
   --max      Maximum tasks to request, 1 to 100 (default 100)
   --help     Show this message
@@ -209,7 +212,7 @@ fetch_assigned() {
   code=$(api_request "$token" "$url" "$out" --get \
     --data-urlencode "responsibles=[\"$user_id\"]" \
     --data-urlencode 'status=["Active","Deferred"]' \
-    --data-urlencode 'fields=["parentIds","superParentIds"]' \
+    --data-urlencode 'fields=["parentIds","superParentIds","briefDescription"]' \
     --data-urlencode "sortField=UpdatedDate" \
     --data-urlencode "sortOrder=Desc" \
     --data-urlencode "pageSize=$max_results" \
@@ -314,7 +317,7 @@ search_by_api_id() {
   local id="$1" status=0 code file
   file=$(mktemp)
   code=$(api_request "$token" "$base/tasks/$id" "$file" --get \
-    --data-urlencode 'fields=["parentIds","superParentIds"]') || status=$?
+    --data-urlencode 'fields=["parentIds","superParentIds","briefDescription","description"]') || status=$?
   if ((status != 0)); then
     rm -f "$file"
     emit "network-error" "Could not reach $host." "$host" "$account"
@@ -337,7 +340,7 @@ search_by_title() {
   SEARCH_FILE=$(mktemp)
   code=$(api_request "$token" "$base/tasks" "$SEARCH_FILE" --get \
     --data-urlencode "title=$query" \
-    --data-urlencode 'fields=["parentIds","superParentIds"]' \
+    --data-urlencode 'fields=["parentIds","superParentIds","briefDescription"]' \
     --data-urlencode "sortField=UpdatedDate" \
     --data-urlencode "sortOrder=Desc" \
     --data-urlencode "pageSize=$max_results" \
@@ -364,6 +367,11 @@ while (($# > 0)); do
   --search)
     mode="search"
     search_query="${2:-}"
+    shift 2
+    ;;
+  --task)
+    mode="preview"
+    task_id="${2:-}"
     shift 2
     ;;
   --week)
@@ -433,10 +441,19 @@ if [[ $mode == "search" ]]; then
   if [[ $trimmed_query =~ ^[0-9]+$ ]]; then
     search_by_permalink "$trimmed_query" >"$TASKS_FILE"
   elif [[ $trimmed_query =~ ^[A-Za-z0-9]{16,256}$ ]]; then
-    # Wrike API ids are long opaque tokens. Short words are titles.
     search_by_api_id "$trimmed_query" >"$TASKS_FILE"
   else
     search_by_title "$trimmed_query" >"$TASKS_FILE"
+  fi
+elif [[ $mode == "preview" ]]; then
+  trimmed_query=$(trim "$task_id")
+  if [[ -z $trimmed_query ]]; then
+    emit_results "" "$host" "$account"
+  fi
+  if [[ $trimmed_query =~ ^[0-9]+$ ]]; then
+    search_by_permalink "$trimmed_query" >"$TASKS_FILE"
+  else
+    search_by_api_id "$trimmed_query" >"$TASKS_FILE"
   fi
 else
   fetch_dashboard_tasks "$TASKS_FILE"
@@ -559,7 +576,9 @@ jq -n \
         projectName: ($space.title // ""),
         updated: (.updatedDate // ""),
         url: (.permalink // ""),
-        due: (.dates.due // "")
+        due: (.dates.due // ""),
+        brief: (.briefDescription // ""),
+        description: (if $mode == "preview" then (.description // .briefDescription // "") else (.briefDescription // "") end)
       };
 
   def due_sec:
@@ -581,7 +600,7 @@ jq -n \
       account: $account,
       tickets: [
         ($tasks[0].data // [])[]
-        | select($mode == "search" or (.status != "Completed" and .status != "Cancelled"))
+        | select($mode == "search" or $mode == "preview" or (.status != "Completed" and .status != "Cancelled"))
         | select(in_followed)
         | row
       ],

@@ -19,8 +19,11 @@ Panel {
   property string confirmedKey: ""
   property string confirmation: ""
   property bool showSettings: false
+  property bool showPreview: false
 
   readonly property var followedSpaces: wrike.followedSpaces
+  readonly property string listFilter: Model.normalizeFilter(wrike.setting("listFilter", "all"))
+  readonly property string groupBy: Model.normalizeGroupBy(wrike.setting("groupBy", "status"))
 
   property int weekTick: 0
   readonly property var weekBars: {
@@ -61,24 +64,34 @@ Panel {
     wrike.refresh()
   }
 
+  function setListFilter(id) {
+    setSetting("listFilter", Model.normalizeFilter(id))
+  }
+
+  function setGroupBy(id) {
+    setSetting("groupBy", Model.normalizeGroupBy(id))
+  }
+
   readonly property bool searchActive: searchField.query.trim() !== ""
   readonly property string trimmedQuery: searchField.query.trim()
   readonly property bool searching: searchActive && wrike.answeredQuery !== trimmedQuery
 
   onSearchActiveChanged: highlightedKey = ""
 
-  readonly property var visibleTickets: {
-    if (searchActive)
-      return Model.filterBySpace(
-        Model.mergeSearchResults(Model.filterTickets(wrike.tickets, searchField.query), wrike.searchResults),
-        root.followedSpaces)
-    var groups = Model.groupTickets(wrike.tickets)
-    return Model.limit(groups.waiting, wrike.maxDisplayedTickets)
-      .concat(Model.limit(groups.assigned, wrike.maxDisplayedTickets))
+  readonly property var visibleSections: {
+    if (searchActive) {
+      return Model.decorateSections([{
+        title: qsTr("RESULTS"),
+        tickets: Model.filterBySpace(
+          Model.mergeSearchResults(Model.filterTickets(wrike.tickets, searchField.query), wrike.searchResults),
+          root.followedSpaces)
+      }], Date.now())
+    }
+    return Model.decorateSections(
+      Model.listSections(wrike.tickets, root.groupBy, root.listFilter, wrike.maxDisplayedTickets, Date.now()),
+      Date.now())
   }
-  readonly property var waitingRows: searchActive ? [] : Model.decorateRows(Model.limit(Model.groupTickets(wrike.tickets).waiting, wrike.maxDisplayedTickets), Date.now())
-  readonly property var assignedRows: searchActive ? [] : Model.decorateRows(Model.limit(Model.groupTickets(wrike.tickets).assigned, wrike.maxDisplayedTickets), Date.now())
-  readonly property var searchRows: !searchActive ? [] : Model.decorateRows(visibleTickets, Date.now())
+  readonly property var visibleTickets: Model.flattenSections(visibleSections)
 
   function ticketAt(key) {
     for (var i = 0; i < visibleTickets.length; i++) {
@@ -92,13 +105,27 @@ Panel {
     highlightedKey = Model.nextKey(visibleTickets, highlightedKey, delta)
   }
 
-  function openTicket(key) {
+  function openPreview(key) {
     var ticket = ticketAt(key)
+    if (!ticket)
+      return
+    showSettings = false
+    showPreview = true
+    wrike.preview(String(ticket.id || ticket.key || ""), ticket)
+  }
+
+  function openInBrowser(key) {
+    var ticket = ticketAt(key) || wrike.previewTicket
     if (!ticket)
       return
     var url = String(ticket.url || "")
     if (url !== "")
       Qt.openUrlExternally(url)
+  }
+
+  function closePreview() {
+    showPreview = false
+    wrike.clearPreview()
   }
 
   function copyKey(key) {
@@ -112,7 +139,7 @@ Panel {
 
   function activateHighlighted() {
     if (highlightedKey !== "")
-      openTicket(highlightedKey)
+      openPreview(highlightedKey)
   }
 
   implicitWidth: button.implicitWidth
@@ -122,6 +149,7 @@ Panel {
     if (opened) {
       highlightedKey = ""
       showSettings = false
+      closePreview()
       searchField.clear()
       wrike.clearSearch()
       wrike.refresh()
@@ -211,10 +239,15 @@ Panel {
       id: keyCatcher
 
       anchors.fill: parent
-      blocked: searchField.inputFocused
+      blocked: searchField.inputFocused || settingsView.inputFocused
       onMoveRequested: function (dx, dy) { if (dy !== 0) root.moveHighlight(dy) }
       onActivateRequested: root.activateHighlighted()
-      onCloseRequested: root.close()
+      onCloseRequested: {
+        if (root.showPreview)
+          root.closePreview()
+        else
+          root.close()
+      }
       onTabRequested: Qt.callLater(function () { searchField.focusInput() })
       onTextKey: function (character) {
         var key = String(character || "").toLowerCase()
@@ -223,7 +256,9 @@ Panel {
         else if (key === "/")
           Qt.callLater(function () { searchField.focusInput() })
         else if (key === "y")
-          root.copyKey(root.highlightedKey)
+          root.copyKey(root.showPreview && wrike.previewTicket ? String(wrike.previewTicket.key || "") : root.highlightedKey)
+        else if (key === "o")
+          root.openInBrowser(root.highlightedKey)
         else if (key === ",")
           root.showSettings = !root.showSettings
       }
@@ -263,7 +298,7 @@ Panel {
 
           WeekBars {
             width: parent.width
-            visible: !root.showSettings
+            visible: !root.showSettings && !root.showPreview
             week: wrike.week
             bars: root.weekBars
             timeLeft: Model.weekTimeLeft(wrike.week, Date.now())
@@ -275,7 +310,7 @@ Panel {
             id: searchField
 
             width: parent.width
-            visible: !root.showSettings
+            visible: !root.showSettings && !root.showPreview
             busy: root.searching
             foreground: root.foreground
             fontFamily: root.fontFamily
@@ -283,7 +318,7 @@ Panel {
             onMoveRequested: function (delta) { root.moveHighlight(delta) }
             onActivated: {
               if (root.highlightedKey !== "")
-                root.openTicket(root.highlightedKey)
+                root.openPreview(root.highlightedKey)
               else
                 wrike.search(root.trimmedQuery)
             }
@@ -293,25 +328,44 @@ Panel {
             }
           }
 
+          FilterBar {
+            width: parent.width
+            visible: !root.showSettings && !root.showPreview && !root.searchActive
+            listFilter: root.listFilter
+            groupBy: root.groupBy
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+            onFilterChosen: function (id) { root.setListFilter(id) }
+            onGroupChosen: function (id) { root.setGroupBy(id) }
+          }
+
+          TaskPreview {
+            width: parent.width
+            visible: !root.showSettings && root.showPreview
+            ticket: wrike.previewTicket
+            loading: wrike.previewLoading
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+            onBackRequested: root.closePreview()
+            onOpenRequested: root.openInBrowser(root.highlightedKey)
+          }
+
           TaskSections {
             width: parent.width
-            visible: !root.showSettings
-            waitingRows: root.waitingRows
-            assignedRows: root.assignedRows
-            searchRows: root.searchRows
-            searchActive: root.searchActive
+            visible: !root.showSettings && !root.showPreview
+            sections: root.visibleSections
             highlightedKey: root.highlightedKey
             confirmedKey: root.confirmedKey
             confirmation: root.confirmation
             foreground: root.foreground
             fontFamily: root.fontFamily
-            onTicketActivated: function (key) { root.openTicket(key) }
+            onTicketActivated: function (key) { root.openPreview(key) }
             onTicketKeyRequested: function (key) { root.copyKey(key) }
           }
 
           StateNotice {
             width: parent.width
-            visible: !root.showSettings && root.visibleTickets.length === 0
+            visible: !root.showSettings && !root.showPreview && root.visibleTickets.length === 0
             state: {
               if (root.searching)
                 return "searching"
@@ -328,6 +382,8 @@ Panel {
           }
 
           SettingsView {
+            id: settingsView
+
             width: parent.width
             visible: root.showSettings
             projects: wrike.projects
@@ -335,6 +391,8 @@ Panel {
             site: wrike.site
             account: wrike.account
             state: wrike.state
+            connecting: wrike.connecting
+            authMessage: wrike.authMessage
             foreground: root.foreground
             fontFamily: root.fontFamily
             week: wrike.week
@@ -345,6 +403,8 @@ Panel {
             onSpaceToggled: function (key) { root.toggleSpace(key) }
             onWeekBarToggled: function (id) { root.toggleWeekBar(id) }
             onDoneStatusToggled: function (name) { root.toggleDoneStatus(name) }
+            onConnectRequested: function (host, token) { wrike.connectAccount(host, token) }
+            onDisconnectRequested: wrike.disconnectAccount()
             onAllSpacesCleared: {
               root.setSetting("followedSpaces", [])
               wrike.refresh()

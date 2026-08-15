@@ -6,6 +6,8 @@
       "title": "Invoice mismatch",
       "status": "Active",
       "customStatusId": "IEAAAAAASTATUS00",
+      "briefDescription": "The amounts do not match the PO.",
+      "description": "<p>The amounts do not match the PO.</p><p>Check line 4.</p>",
       "permalink": "https://www.wrike.com/open.htm?id=109",
       "updatedDate": "2026-08-13T09:00:00Z",
       "dates": { "type": "Backlog" },

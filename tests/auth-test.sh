@@ -152,6 +152,10 @@ run_flag() {
   PATH="$sandbox/bin" "$SCRIPT" "$@" 2>&1
 }
 
+run_connect() {
+  printf '%s\n' "$1" | PATH="$sandbox/bin" "$SCRIPT" --connect 2>&1
+}
+
 bash -n "$SCRIPT" || fail "script does not parse"
 PATH="$sandbox/bin" "$SCRIPT" --help >/dev/null || fail "--help failed"
 
@@ -232,6 +236,19 @@ assert_contains "$output" "$HOST" "--status does not show the host"
 assert_contains "$output" "$EMAIL" "--status does not show the account"
 assert_not_contains "$output" "$TOKEN" "--status printed the token"
 assert_not_contains "$output" "secret =" "--status echoed raw secret-tool output"
+
+reset_state
+output=$(run_connect "$(jq -nc --arg host "$HOST" --arg token "$TOKEN" '{host: $host, token: $token}')") ||
+  fail "--connect failed on a valid payload: $output"
+[[ $(jq -r .token <"$STUB_DIR/vault") == "$TOKEN" ]] || fail "--connect did not store the token"
+assert_not_contains "$(cat "$STUB_DIR/calls")" "$TOKEN" "--connect leaked the token into a command line"
+assert_contains "$(cat "$STUB_DIR/creds")" "$TOKEN" "--connect never reached curl through --config"
+
+reset_state
+if run_connect "" >/dev/null 2>&1; then
+  fail "--connect succeeded with empty stdin"
+fi
+[[ ! -s "$STUB_DIR/vault" ]] || fail "empty --connect stored a credential"
 
 run_flag --clear >/dev/null || fail "--clear failed"
 [[ ! -s "$STUB_DIR/vault" ]] || fail "--clear left the secret behind"

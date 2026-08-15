@@ -75,14 +75,15 @@ reads tasks, spaces, and workflows.
 | --- | --- |
 | Left click the icon | Open or close the panel |
 | Right click the icon | Refresh |
-| Click a row | Open the task in your browser |
+| Click a row | Open the in-panel preview |
 | `j` / `k` / arrows | Move through rows |
-| `Enter` | Open the highlighted task |
+| `Enter` | Open the highlighted preview |
+| `o` | Open the task in the browser |
 | `y` | Copy the highlighted permalink id |
 | `/` | Focus search |
 | `r` | Refresh |
 | `,` | Open the settings page |
-| `Escape` | Clear the search, then close the panel |
+| `Escape` | Close the preview, then the panel |
 
 ## Search
 
