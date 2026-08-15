@@ -5,7 +5,7 @@
   "version": "0.1.0",
   "author": "niusnet",
   "license": "MIT",
-  "description": "The Wrike tasks waiting on you, with search across your whole account.",
+  "description": "Assigned Wrike tasks in the Omarchy bar, with search, filters, and an in-panel preview.",
   "kinds": [
     "bar-widget"
   ],
@@ -15,7 +15,7 @@
   },
   "barWidget": {
     "displayName": "Wrike",
-    "description": "Tasks assigned to you, split into what is in progress and what is still to do, with search by permalink id or title across the whole account.",
+    "description": "Tasks assigned to you, filterable and grouped by status or space, with search and an in-panel preview.",
     "category": "Development",
     "aliases": [
       "wrike",

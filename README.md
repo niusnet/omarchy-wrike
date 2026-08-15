@@ -1,36 +1,34 @@
 # Omarchy Wrike
 
-Your Wrike work in the Omarchy bar, and a search box for everything else.
+Assigned Wrike tasks in the Omarchy bar. Filter the list, search the account, and open a task without leaving the desktop.
 
-## What it shows
+![Wrike panel on the Omarchy bar](assets/panel.png)
 
-- **Your tasks**, split by status or grouped by the real Wrike space
-- **A task modal** with breadcrumb, description, attachments, comments, and time logging
-- **This week**, with progress bars for time, finished work and overdue work
-- **Search across the whole account**, by permalink id or by title
+It is not a Wrike client. It answers two questions: what is on my plate, and where is task X.
 
-It is not a Wrike client. It answers two questions: what is on my plate right
-now, and where is task X.
+## Quick path
 
-Wrike has no sprint. The week bars are the equivalent: the clock, the work
-that belongs to this week, and how much of it is already late.
-
-## Requirements
-
-Omarchy Quattro with shell plugin support. Everything it needs at runtime,
-`curl`, `jq` and `secret-tool`, is already part of an Omarchy install.
+1. Add the plugin and put it on the bar.
+2. Open the panel and press the gear.
+3. Paste a permanent token. The plugin checks it against Wrike before it stores anything.
+4. Your assigned work appears grouped by space.
 
 ## Install
 
+This repository is private while the plugin is in daily use. You need GitHub access to clone it.
+
 ```bash
 omarchy plugin add https://github.com/niusnet/omarchy-wrike.git --enable
-cd ~/.config/omarchy/plugins/niusnet.wrike && ./omarchy-wrike-auth
 ```
 
-The setup asks for your datacenter (`www.wrike.com`, `eu`, or `us2`) and a
-permanent token, verifies them against Wrike before storing anything, and
-prints the clicks to make on the token page. An empty token or Ctrl+C
-cancels; nothing is stored.
+If `git clone` cannot see a private repo, clone with `gh` first, then add the local path:
+
+```bash
+gh repo clone niusnet/omarchy-wrike
+omarchy plugin add ./omarchy-wrike --enable
+```
+
+`--enable` asks which bar section to use. The default is the right side.
 
 ### Update
 
@@ -44,87 +42,94 @@ omarchy plugin update niusnet.wrike
 omarchy plugin remove niusnet.wrike
 ```
 
-Removing the plugin leaves the credential in your keyring. To take that with it:
+Removing the plugin leaves the token in the keyring. Clear it from the gear (**Sign out**) or with:
 
 ```bash
-./omarchy-wrike-auth --clear
+~/.config/omarchy/plugins/niusnet.wrike/omarchy-wrike-auth --clear
 ```
 
-## Credentials
+## Connect
 
-The token lives in your system keyring, under `service=omarchy-wrike`. The
-plugin reads it at request time and never copies, logs, caches, or writes it
-anywhere. Nothing lands in `shell.json` or in a dotfile, and no credential is
-ever typed into a bar popup.
+You need a permanent token. In Wrike: **Profile → Apps & Integrations → API → Permanent access token**. The token inherits your own permissions.
 
-Two details are deliberate rather than incidental:
+Two ways to store it:
 
-- Credentials reach `curl` through a config file on a pipe, never as an
-  argument, because anything in `argv` is readable by every process on the
-  machine through `ps`.
-- The plugin never calls `secret-tool search`, which prints the secret on
-  stdout. It reads the credential with `lookup`, which returns only what was
-  asked for.
+| Where | How |
+| --- | --- |
+| Panel settings | Open the panel, press the gear, enter the host and the token, then **Connect** |
+| Terminal | `cd ~/.config/omarchy/plugins/niusnet.wrike && ./omarchy-wrike-auth` |
 
-Create the token in Wrike: **Profile → Apps & Integrations → API → Permanent
-access token**. The token inherits your own permissions. This plugin only
-reads tasks, spaces, and workflows.
+The host is `www.wrike.com`, `eu`, or `us2`. An empty token or Ctrl+C cancels. Nothing is stored until Wrike accepts the token.
 
-## Controls
+**Sign out** on the same settings page removes the credential from this machine.
+
+The token lives in the system keyring under `service=omarchy-wrike`. The plugin reads it at request time. It is never written to `shell.json`, never logged, and never placed on a process command line.
+
+## What you see
+
+The icon sits on the bar. Left click opens the panel. Right click refreshes.
+
+The list is the work assigned to you. Completed and cancelled tasks stay out.
+
+| Control | What it does |
+| --- | --- |
+| **All / In progress / To do / Overdue** | Filter the current list |
+| **By status / By space** | Group the same tasks. Space is the default |
+| Group header | Collapse or expand that group |
+| A row | Open the in-panel preview |
+| Search box | Filter the loaded list immediately, then search the whole account |
+
+The preview stays in the panel. It shows the breadcrumb, status, description, comments, and a way to log time. Attachments live on their own tab. Comments load ten at a time. Open the task in the browser only when you want to.
+
+## Settings
+
+The gear (or `,`) is for Wrike-specific choices:
+
+- **Spaces.** Untick the ones you do not care about. Ticked spaces feed the list and lead the search. The others stay searchable.
+- **Connection.** Host, token, connect, and sign out.
+
+Refresh interval and row count are ordinary widget settings:
+
+| Setting | Default | Range |
+| --- | --- | --- |
+| Refresh interval | 900 seconds | 60–3600 |
+| Maximum displayed tasks | 25 | 5–100 |
+
+## Keyboard
 
 | Input | Action |
 | --- | --- |
-| Left click the icon | Open or close the panel |
-| Right click the icon | Refresh |
-| Click a row | Open the in-panel preview |
 | `j` / `k` / arrows | Move through rows |
 | `Enter` | Open the highlighted preview |
 | `o` | Open the task in the browser |
 | `y` | Copy the highlighted permalink id |
 | `/` | Focus search |
 | `r` | Refresh |
-| `,` | Open the settings page |
+| `,` | Open settings |
 | `Escape` | Close the preview, then the panel |
 
 ## Search
 
-Typing filters the tasks already loaded straight away, and a query goes out to
-Wrike after a short pause. Both sets of results land in one list.
+Typing filters the tasks already loaded. After a short pause the same query goes to Wrike. Both sets land in one list.
 
 ```
-109          finds the task whose permalink is open.htm?id=109
-supplier     finds tasks with that word in the title
-IEAAAAA…     finds a task by its API id
+109          the task whose permalink is open.htm?id=109
+supplier     tasks with that word in the title
+IEAAAAA…     a task by its API id
 ```
 
-## Settings
+## How the list is grouped
 
-Interval and row count are ordinary widget settings, editable wherever Omarchy
-shows plugin settings.
-
-Everything that depends on your Wrike lives in the panel's own settings page,
-reachable with the gear or with `,`:
-
-- **Spaces.** Untick the ones you do not care about. Ticked spaces feed your
-  lists and bound your searches.
-- **This week.** Time, tasks and overdue, independently. Untick them all to
-  turn the section off, which also stops the plugin asking Wrike for it.
-- **What counts as done.** The statuses in this week's plate, with the ones
-  Wrike calls completed ticked to start with.
-
-## How it groups your work
-
-Nothing keys off a status name. Every Wrike account names its custom statuses
-freely, so `In Review` is a label, never a signal.
+Nothing keys off a status name. Every Wrike account names custom statuses freely, so `In Review` is a label, never a signal.
 
 The portable signals are:
 
 - Wrike's status group: `Active`, `Completed`, `Cancelled`, `Deferred`
-- Whether the task has already started: a Planned task whose start date is
-  today or earlier, or a Milestone whose due date has arrived
+- Whether the task has already started: a Planned task whose start date is today or earlier, or a Milestone whose due date has arrived
 
-Completed and cancelled work is dropped. Started active work is **in
-progress**. Everything else assigned to you is **to do**.
+Completed and cancelled work is dropped. Started active work is **in progress**. Everything else assigned to you is **to do**. **Overdue** is assigned work whose due date has already passed.
+
+When you group **By space**, each section is the real Wrike space that owns the task, not the inner folder.
 
 ## Local development
 
@@ -137,19 +142,13 @@ node --test tests/model.test.js
 Run the helpers directly to see what the panel is given:
 
 ```bash
-./omarchy-wrike-fetch --week | jq
+./omarchy-wrike-fetch | jq
 ./omarchy-wrike-fetch --search 109 | jq
 ```
 
-QML changes need `omarchy restart shell`. Touching a file is not enough: the
-shell keeps the compiled version in memory.
+QML changes need `omarchy restart shell`. Touching a file is not enough: the shell keeps the compiled version in memory.
 
-## How it works
-
-`Service.qml` schedules `omarchy-wrike-fetch`, which owns every API call and
-every credential access and prints one JSON document. `Panel.qml` assembles
-small components and owns keyboard focus. `Model.js` holds the logic worth
-testing and is exercised under `node --test` without a running shell.
+`Service.qml` schedules `omarchy-wrike-fetch`, which owns every API call and every credential access and prints one JSON document. `Panel.qml` assembles the UI. `Model.js` holds the logic that is tested under `node --test`.
 
 ## License
 
