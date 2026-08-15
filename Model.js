@@ -16,7 +16,6 @@ var MINUTE = 60
 var HOUR = 3600
 var DAY = 86400
 var MONTH = 2592000
-var MS_PER_DAY = 86400000
 
 function asArray(value) {
   return Array.isArray(value) ? value : []
@@ -165,36 +164,6 @@ function withRemoteFlag(ticket, remote) {
   return copy
 }
 
-function idList(value) {
-  var raw = []
-  if (Array.isArray(value))
-    raw = value
-  else if (text(value) !== "")
-    raw = text(value).split(",")
-
-  var ids = []
-  for (var i = 0; i < raw.length; i++) {
-    var id = text(raw[i]).trim().toLowerCase()
-    if (id !== "" && ids.indexOf(id) === -1)
-      ids.push(id)
-  }
-  return ids
-}
-
-function toggleWeekBar(current, id) {
-  var chosen = idList(current)
-  var wanted = text(id).trim().toLowerCase()
-  if (wanted === "")
-    return chosen
-
-  var at = chosen.indexOf(wanted)
-  if (at === -1)
-    chosen.push(wanted)
-  else
-    chosen.splice(at, 1)
-  return chosen
-}
-
 // Normalises the followed-spaces setting into a list of space ids.
 //
 // Space ids are opaque Wrike identifiers and must keep their original case.
@@ -259,29 +228,6 @@ function toggleFollowedSpace(followed, key, allKeys) {
   return next
 }
 
-function toggleDoneStatus(current, name, defaults) {
-  var selection = asArray(current)
-  if (selection.length === 0)
-    selection = asArray(defaults)
-
-  var wanted = text(name)
-  if (wanted === "")
-    return selection.slice()
-
-  var lowered = wanted.toLowerCase()
-  var next = []
-  var found = false
-  for (var i = 0; i < selection.length; i++) {
-    if (text(selection[i]).toLowerCase() === lowered)
-      found = true
-    else
-      next.push(selection[i])
-  }
-  if (!found)
-    next.push(wanted)
-  return next
-}
-
 function filterBySpace(tickets, followed) {
   var list = asArray(tickets)
   var keys = asArray(followed)
@@ -302,130 +248,6 @@ function filterBySpace(tickets, followed) {
       kept.push(list[i])
   }
   return kept
-}
-
-var WEEK_BAR_TIME = "time"
-var WEEK_BAR_TASKS = "tasks"
-var WEEK_BAR_OVERDUE = "overdue"
-
-function weekTotals(week, doneStatuses) {
-  var totals = { total: 0, done: 0, overdue: 0 }
-  if (!week)
-    return totals
-
-  totals.overdue = Number(week.overdue) || 0
-
-  var statuses = asArray(week.statuses)
-  var chosen = []
-  var explicit = asArray(doneStatuses)
-  for (var c = 0; c < explicit.length; c++)
-    chosen.push(text(explicit[c]).toLowerCase())
-
-  for (var i = 0; i < statuses.length; i++) {
-    var entry = statuses[i]
-    var count = Number(entry.count) || 0
-    var finished = chosen.length > 0
-      ? chosen.indexOf(text(entry.name).toLowerCase()) !== -1
-      : text(entry.category) === CATEGORY_DONE
-
-    totals.total += count
-    if (finished)
-      totals.done += count
-  }
-  return totals
-}
-
-function defaultDoneStatuses(week) {
-  var names = []
-  var statuses = asArray(week && week.statuses)
-  for (var i = 0; i < statuses.length; i++) {
-    if (text(statuses[i].category) === CATEGORY_DONE)
-      names.push(text(statuses[i].name))
-  }
-  return names
-}
-
-function weekBars(week, wanted, nowMs, doneStatuses) {
-  if (!week)
-    return []
-
-  var chosen = idList(wanted)
-  var bars = []
-  var now = isFinite(nowMs) ? nowMs : Date.now()
-  var totals = weekTotals(week, doneStatuses)
-  var elapsedPercent = timePercent(week, now)
-
-  if (chosen.indexOf(WEEK_BAR_TIME) !== -1 && elapsedPercent !== null) {
-    bars.push({
-      id: WEEK_BAR_TIME,
-      label: "time",
-      percent: elapsedPercent,
-      detail: "",
-      mark: null
-    })
-  }
-
-  if (chosen.indexOf(WEEK_BAR_TASKS) !== -1) {
-    var ticketPercent = totals.total > 0 ? Math.round((totals.done / totals.total) * 100) : 0
-    bars.push({
-      id: WEEK_BAR_TASKS,
-      label: "tasks",
-      percent: ticketPercent,
-      detail: totals.done + "/" + totals.total,
-      mark: elapsedPercent
-    })
-  }
-
-  if (chosen.indexOf(WEEK_BAR_OVERDUE) !== -1) {
-    var overduePercent = totals.total > 0 ? Math.round((totals.overdue / totals.total) * 100) : 0
-    bars.push({
-      id: WEEK_BAR_OVERDUE,
-      label: "overdue",
-      percent: overduePercent,
-      detail: totals.overdue + "/" + totals.total,
-      mark: elapsedPercent
-    })
-  }
-
-  return bars
-}
-
-function timePercent(span, nowMs) {
-  var start = Date.parse(text(span && span.startDate))
-  var end = Date.parse(text(span && span.endDate))
-  if (!isFinite(start) || !isFinite(end) || end <= start)
-    return null
-  var elapsed = Math.min(Math.max(nowMs - start, 0), end - start)
-  return Math.round((elapsed / (end - start)) * 100)
-}
-
-function weekTimeLeft(week, nowMs) {
-  var end = Date.parse(text(week && week.endDate))
-  if (!isFinite(end))
-    return ""
-  return daysLeftLabel(end, isFinite(nowMs) ? nowMs : Date.now())
-}
-
-function daysLeftLabel(endMs, nowMs) {
-  var remaining = endMs - nowMs
-  if (remaining <= 0)
-    return "ended"
-  var days = Math.ceil(remaining / MS_PER_DAY)
-  if (days === 1)
-    return "1d left"
-  return days + "d left"
-}
-
-function dueCoverage(week) {
-  if (!week)
-    return ""
-  var total = Number(week.total) || 0
-  var dated = Number(week.dated) || 0
-  if (total === 0)
-    return ""
-  if (dated === total)
-    return "every task has a due date"
-  return dated + " of " + total + " tasks have a due date"
 }
 
 function limit(tickets, max) {
@@ -690,15 +512,7 @@ if (typeof module !== "undefined" && module.exports) {
     filterTickets: filterTickets,
     mergeSearchResults: mergeSearchResults,
     filterBySpace: filterBySpace,
-    weekBars: weekBars,
-    weekTotals: weekTotals,
-    weekTimeLeft: weekTimeLeft,
-    defaultDoneStatuses: defaultDoneStatuses,
-    toggleDoneStatus: toggleDoneStatus,
-    dueCoverage: dueCoverage,
     spaceList: spaceList,
-    idList: idList,
-    toggleWeekBar: toggleWeekBar,
     toggleFollowedSpace: toggleFollowedSpace,
     limit: limit,
     stripHtml: stripHtml,

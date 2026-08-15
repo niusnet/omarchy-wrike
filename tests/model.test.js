@@ -157,18 +157,6 @@ test('toggleFollowedSpace matches space ids case insensitively', () => {
   assert.deepEqual(Model.toggleFollowedSpace([DEMO], '', ALL), [DEMO])
 })
 
-test('idList normalises to one convention', () => {
-  assert.deepEqual(Model.idList(['TIME', 'TASKS', 'overdue']), ['time', 'tasks', 'overdue'])
-  assert.deepEqual(Model.idList('time, tasks'), ['time', 'tasks'])
-  assert.deepEqual(Model.idList(null), [])
-})
-
-test('toggleWeekBar adds, removes, and can empty the list', () => {
-  assert.deepEqual(Model.toggleWeekBar(['time'], 'overdue'), ['time', 'overdue'])
-  assert.deepEqual(Model.toggleWeekBar(['time', 'overdue'], 'time'), ['overdue'])
-  assert.deepEqual(Model.toggleWeekBar(['time'], 'time'), [])
-})
-
 test('filterBySpace drops spaces that are not followed', () => {
   const results = [
     { key: '1', projectKey: ADMIN },
@@ -183,88 +171,6 @@ test('filterBySpace leaves the list alone when nothing is followed', () => {
   const results = [{ key: '1', projectKey: DEMO }, { key: '2', projectKey: OPS }]
   assert.deepEqual(Model.filterBySpace(results, []).map(t => t.key), ['1', '2'])
   assert.deepEqual(Model.filterBySpace(null, [DEMO]), [])
-})
-
-const WEEK = {
-  name: 'This week',
-  startDate: '2026-08-10T00:00:00.000Z',
-  endDate: '2026-08-17T00:00:00.000Z',
-  total: 10,
-  dated: 8,
-  overdue: 2,
-  statuses: [
-    { name: 'Completed', category: 'done', count: 4 },
-    { name: 'Active', category: 'indeterminate', count: 5 },
-    { name: 'Deferred', category: 'new', count: 1 }
-  ]
-}
-
-const MIDWEEK = Date.parse('2026-08-13T12:00:00.000Z')
-
-test('weekBars reports time and work side by side', () => {
-  const bars = Model.weekBars(WEEK, ['time', 'tasks'], MIDWEEK)
-  assert.deepEqual(bars.map(b => b.id), ['time', 'tasks'])
-  assert.equal(bars[0].percent, 50)
-  assert.equal(bars[1].percent, 40)
-  assert.equal(bars[1].detail, '4/10')
-})
-
-test('weekBars can show overdue too', () => {
-  const bars = Model.weekBars(WEEK, ['time', 'tasks', 'overdue'], MIDWEEK)
-  assert.deepEqual(bars.map(b => b.id), ['time', 'tasks', 'overdue'])
-  assert.equal(bars[2].percent, 20)
-  assert.equal(bars[2].detail, '2/10')
-})
-
-test('weekTotals falls back to what Wrike calls completed', () => {
-  const totals = Model.weekTotals(WEEK, [])
-  assert.equal(totals.total, 10)
-  assert.equal(totals.done, 4)
-  assert.equal(totals.overdue, 2)
-})
-
-test("weekTotals honours the team's own definition of done", () => {
-  const totals = Model.weekTotals(WEEK, ['Completed', 'Deferred'])
-  assert.equal(totals.done, 5)
-})
-
-test('defaultDoneStatuses starts from what Wrike calls completed', () => {
-  assert.deepEqual(Model.defaultDoneStatuses(WEEK), ['Completed'])
-})
-
-test('weekBars shows nothing when nothing is asked for', () => {
-  assert.deepEqual(Model.weekBars(WEEK, [], MIDWEEK), [])
-  assert.deepEqual(Model.weekBars(null, ['time'], MIDWEEK), [])
-})
-
-test('weekBars never reports negative or overrun time', () => {
-  const before = Date.parse('2026-08-01T00:00:00.000Z')
-  const after = Date.parse('2026-08-20T00:00:00.000Z')
-  assert.equal(Model.weekBars(WEEK, ['time'], before)[0].percent, 0)
-  assert.equal(Model.weekBars(WEEK, ['time'], after)[0].percent, 100)
-})
-
-test('weekBars marks where the clock stands on each work bar', () => {
-  const bars = Model.weekBars(WEEK, ['time', 'tasks'], MIDWEEK)
-  assert.equal(bars[0].mark, null)
-  assert.equal(bars[1].mark, 50)
-})
-
-test('weekTimeLeft is the headline figure, not a bar detail', () => {
-  assert.equal(Model.weekTimeLeft(WEEK, MIDWEEK), '4d left')
-  assert.equal(Model.weekTimeLeft(WEEK, Date.parse('2026-08-20T00:00:00.000Z')), 'ended')
-  assert.equal(Model.weekTimeLeft(null, MIDWEEK), '')
-})
-
-test('toggleDoneStatus starts from what is drawn, not from nothing', () => {
-  assert.deepEqual(Model.toggleDoneStatus([], 'Completed', ['Completed', 'Cancelled']), ['Cancelled'])
-})
-
-test('dueCoverage says how much of the week is dated', () => {
-  assert.equal(Model.dueCoverage(WEEK), '8 of 10 tasks have a due date')
-  const full = Object.assign({}, WEEK, { dated: 10 })
-  assert.equal(Model.dueCoverage(full), 'every task has a due date')
-  assert.equal(Model.dueCoverage(null), '')
 })
 
 test('limit caps the list and ignores a broken setting', () => {

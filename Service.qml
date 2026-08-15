@@ -20,8 +20,6 @@ Item {
   property string fetchedAt: ""
   property var tickets: []
   property var projects: []
-  property var week: null
-  property string weekState: "off"
 
   property var searchResults: []
   property string searchQuery: ""
@@ -84,20 +82,12 @@ Item {
   }
 
   readonly property var followedSpaces: Model.spaceList(setting("followedSpaces", []))
-  readonly property var weekBarChoice: Model.idList(setting("weekBars", ["time", "tasks"]))
-  readonly property bool wantWeek: weekBarChoice.length > 0
-  readonly property var doneStatuses: {
-    var stored = setting("doneStatuses", [])
-    return Array.isArray(stored) ? stored : Model.spaceList(stored)
-  }
 
   function dashboardCommand() {
     var command = [helperPath(), "--max", String(maxDisplayedTickets * 2)]
     var followed = followedSpaces
     if (followed.length > 0)
       command.push("--spaces", followed.join(","))
-    if (wantWeek)
-      command.push("--week")
     return command
   }
 
@@ -135,16 +125,12 @@ Item {
       if (state === "unconfigured") {
         tickets = []
         projects = []
-        week = null
-        weekState = "off"
       }
       return
     }
 
     tickets = Array.isArray(data.tickets) ? data.tickets : []
     projects = Array.isArray(data.projects) ? data.projects : []
-    week = data.week || null
-    weekState = String(data.weekState || "off")
     fetchedAt = String(data.generatedAt || "")
   }
 

@@ -192,7 +192,7 @@ assert_jq '[.tickets[] | select(.key == "104")][0].statusCategory == "new"' "$pa
 assert_jq '.projects | length == 2' "$payload" "spaces missing"
 assert_jq '.projects[0].key == "IEAAAADEMO000001"' "$payload" "space key missing"
 assert_jq '.projects[0].name == "Demo"' "$payload" "space name missing from the space list"
-assert_jq '.weekState == "off"' "$payload" "week should be off unless asked for"
+assert_jq 'has("week") | not' "$payload" "dashboard still reports a week"
 
 urls=$(cat "$STUB_DIR/urls")
 assert_contains "$urls" "responsibles=[\"$USER_ID\"]" "the request does not filter on the current user"
@@ -216,19 +216,6 @@ store_credential
 payload=$(run_helper --spaces 'IEAAAADEMO000001) ; rm -rf /') || fail "helper failed on a hostile space list"
 assert_not_contains "$(cat "$STUB_DIR/urls")" "rm -rf" "a hostile space id reached the URL"
 assert_jq '.state == "ok"' "$payload" "a hostile space list broke the dashboard"
-
-# ---- Week
-
-reset_state
-store_credential
-payload=$(run_helper --week) || fail "helper failed with --week"
-assert_jq '.weekState == "ok"' "$payload" "weekState is not ok"
-assert_jq '.week.name == "This week"' "$payload" "week name missing"
-assert_jq '.week.startDate | startswith("2026-08-10")' "$payload" "week did not start on Monday"
-assert_jq '.week.endDate | startswith("2026-08-17")' "$payload" "week did not end next Monday"
-assert_jq '.week.total >= 1' "$payload" "week has no tasks"
-assert_jq '[.week.statuses[].name] | index("Completed") != null' "$payload" "completed week status missing"
-assert_contains "$(cat "$STUB_DIR/urls")" "completedDate=" "completed-this-week was not requested"
 
 # ---- Search
 

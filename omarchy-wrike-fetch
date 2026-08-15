@@ -22,12 +22,10 @@ readonly DEFAULT_MAX=100
 mode="dashboard"
 search_query=""
 task_id=""
-want_week=0
 spaces_filter=""
 max_results="$DEFAULT_MAX"
 
 TASKS_FILE=""
-COMPLETED_FILE=""
 SPACES_FILE=""
 WORKFLOWS_FILE=""
 FOLDERS_FILE=""
@@ -38,7 +36,6 @@ SEARCH_FILE=""
 IDS_FILE=""
 cleanup() {
   [[ -n $TASKS_FILE ]] && rm -f "$TASKS_FILE"
-  [[ -n $COMPLETED_FILE ]] && rm -f "$COMPLETED_FILE"
   [[ -n $SPACES_FILE ]] && rm -f "$SPACES_FILE"
   [[ -n $WORKFLOWS_FILE ]] && rm -f "$WORKFLOWS_FILE"
   [[ -n $FOLDERS_FILE ]] && rm -f "$FOLDERS_FILE"
@@ -53,7 +50,7 @@ trap cleanup EXIT
 
 usage() {
   cat <<'USAGE'
-Usage: omarchy-wrike-fetch [--spaces ID[,ID...]] [--max N] [--week]
+Usage: omarchy-wrike-fetch [--spaces ID[,ID...]] [--max N]
        omarchy-wrike-fetch --search QUERY
        omarchy-wrike-fetch --task ID
        omarchy-wrike-fetch --comment ID
@@ -68,7 +65,6 @@ connect an account.
   --task     Fetch one task for the in-panel preview
   --comment  Post a comment; JSON {text} on stdin
   --timelog  Log time; JSON {hours,trackedDate,comment} on stdin
-  --week     Also report this week's progress
   --max      Maximum tasks to request, 1 to 100 (default 100)
   --help     Show this message
 USAGE
@@ -92,9 +88,7 @@ emit() {
       site: $site,
       account: $account,
       tickets: [],
-      projects: [],
-      week: null,
-      weekState: "off"
+      projects: []
     }'
   exit 0
 }
@@ -115,9 +109,7 @@ emit_results() {
       site: $site,
       account: $account,
       tickets: [],
-      projects: [],
-      week: null,
-      weekState: "off"
+      projects: []
     }'
   exit 0
 }
@@ -199,20 +191,6 @@ handle_http() {
   esac
 }
 
-# Monday 00:00 UTC of the current week, and the following Monday. Tests pin the
-# clock with WRIKE_NOW so the week bounds are deterministic.
-week_start=""
-week_end=""
-compute_week() {
-  local now_utc now_date dow offset
-  now_utc="${WRIKE_NOW:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
-  now_date="${now_utc%%T*}"
-  dow=$(date -u -d "$now_date" +%u)
-  offset=$((dow - 1))
-  week_start=$(date -u -d "$now_date - $offset days" +%Y-%m-%d)
-  week_end=$(date -u -d "$week_start + 7 days" +%Y-%m-%d)
-}
-
 # GET /tasks (account or one space) with the shared assigned-work filters.
 # Leaves the body in $1. Prints the HTTP code.
 fetch_assigned() {
@@ -285,20 +263,6 @@ fetch_dashboard_tasks() {
   for page in "${pages[@]+"${pages[@]}"}"; do
     rm -f "$page"
   done
-}
-
-fetch_completed_week() {
-  COMPLETED_FILE=$(mktemp)
-  local status=0 code
-  code=$(api_request "$token" "$base/tasks" "$COMPLETED_FILE" --get \
-    --data-urlencode "responsibles=[\"$user_id\"]" \
-    --data-urlencode 'status=["Completed"]' \
-    --data-urlencode "completedDate={\"start\":\"${week_start}T00:00:00Z\",\"end\":\"${week_end}T00:00:00Z\"}" \
-    --data-urlencode 'fields=["parentIds","superParentIds"]' \
-    --data-urlencode "pageSize=$max_results") || status=$?
-  if ((status != 0)) || [[ $code != 200 ]] || ! jq -e . >/dev/null 2>&1 <"$COMPLETED_FILE"; then
-    printf '{"data":[]}' >"$COMPLETED_FILE"
-  fi
 }
 
 # Account folder tree is one call. Do not request extra fields: this account
@@ -521,10 +485,6 @@ while (($# > 0)); do
     task_id="${2:-}"
     shift 2
     ;;
-  --week)
-    want_week=1
-    shift
-    ;;
   --max)
     max_results="${2:-$DEFAULT_MAX}"
     [[ $max_results =~ ^[0-9]+$ ]] || {
@@ -625,8 +585,6 @@ SPACES_FILE=$(mktemp)
 printf '{"data":[]}' >"$SPACES_FILE"
 WORKFLOWS_FILE=$(mktemp)
 printf '{"data":[]}' >"$WORKFLOWS_FILE"
-COMPLETED_FILE=$(mktemp)
-printf '{"data":[]}' >"$COMPLETED_FILE"
 FOLDERS_FILE=$(mktemp)
 printf '{"data":[]}' >"$FOLDERS_FILE"
 COMMENTS_FILE=$(mktemp)
@@ -652,11 +610,6 @@ if [[ $mode == "dashboard" ]]; then
     printf '{"data":[]}' >"$WORKFLOWS_FILE"
   fi
 
-  if ((want_week == 1)); then
-    compute_week
-    fetch_completed_week
-  fi
-
   fetch_folder_index
 elif [[ $mode == "preview" || $mode == "attachments" ]]; then
   preview_id=$(jq -r '.data[0].id // empty' <"$TASKS_FILE" 2>/dev/null || true)
@@ -674,12 +627,8 @@ jq -n \
   --arg mode "$mode" \
   --arg site "$host" \
   --arg account "$account" \
-  --arg weekStart "${week_start:-}" \
-  --arg weekEnd "${week_end:-}" \
   --arg spacesFilter "$spaces_filter" \
-  --argjson wantWeek "$want_week" \
   --slurpfile tasks "$TASKS_FILE" \
-  --slurpfile completed "$COMPLETED_FILE" \
   --slurpfile spaces "$SPACES_FILE" \
   --slurpfile workflows "$WORKFLOWS_FILE" \
   --slurpfile folders "$FOLDERS_FILE" \
@@ -829,16 +778,7 @@ jq -n \
         else [] end)
       };
 
-  def due_sec:
-    ((.dates.due // "") | parse_date? // null);
-
-  def completed_sec:
-    ((.completedDate // "") | parse_date? // null);
-
-  (($weekStart + "T00:00:00Z") | parse_date? // null) as $ws
-  | (($weekEnd + "T00:00:00Z") | parse_date? // null) as $we
-
-  | {
+  {
       schema: $schema,
       mode: $mode,
       generatedAt: (now | todate),
@@ -855,60 +795,6 @@ jq -n \
       projects: [
         $spaceList[]
         | { key: .id, name: (.title // .id) }
-      ],
-      week: null,
-      weekState: (if $wantWeek == 1 then "ok" else "off" end)
+      ]
     }
-  | if $wantWeek != 1 or $ws == null or $we == null then .
-    else
-      (
-        [ ($tasks[0].data // [])[], ($completed[0].data // [])[] ]
-        | unique_by(.id)
-        | map(select(in_followed))
-        | map(select(
-            (completed_sec != null and completed_sec >= $ws and completed_sec < $we)
-            or (
-              (.status == "Active" or .status == "Deferred")
-              and due_sec != null
-              and due_sec < $we
-            )
-          ))
-      ) as $weekTasks
-      | .week = (
-          if ($weekTasks | length) == 0 then
-            {
-              name: "This week",
-              startDate: ($weekStart + "T00:00:00.000Z"),
-              endDate: ($weekEnd + "T00:00:00.000Z"),
-              total: 0,
-              dated: 0,
-              overdue: 0,
-              statuses: []
-            }
-          else
-            {
-              name: "This week",
-              startDate: ($weekStart + "T00:00:00.000Z"),
-              endDate: ($weekEnd + "T00:00:00.000Z"),
-              total: ($weekTasks | length),
-              dated: ([$weekTasks[] | select(due_sec != null)] | length),
-              overdue: ([
-                $weekTasks[]
-                | select((.status == "Active" or .status == "Deferred") and due_sec != null and due_sec < $ws)
-              ] | length),
-              statuses: (
-                $weekTasks
-                | map(. as $t | $t + {label: (($statusById[$t.customStatusId].name // $t.status) // "")})
-                | group_by(.label)
-                | map({
-                    name: .[0].label,
-                    category: (.[0] | category),
-                    count: length
-                  })
-                | sort_by(-.count)
-              )
-            }
-          end
-        )
-    end
   '

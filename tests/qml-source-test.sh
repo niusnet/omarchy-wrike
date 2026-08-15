@@ -31,8 +31,8 @@ if command -v qmllint >/dev/null 2>&1; then
 fi
 
 for property in loading state message site account fetchedAt tickets projects \
-  searchResults searchQuery answeredQuery week weekState followedSpaces \
-  weekBarChoice doneStatuses waitingCount assignedCount hasData \
+  searchResults searchQuery answeredQuery followedSpaces \
+  waitingCount assignedCount hasData \
   connecting authMessage previewTicket previewLoading; do
   has "Service.qml" "property.* $property\b" "Service.qml no longer exposes $property"
 done
@@ -64,6 +64,10 @@ has "WrikeSearchField.qml" "Keys\.onDownPressed" "the search field swallows the 
 
 hasnt "Panel.qml" "elide: Text\.ElideRight" \
   "Panel.qml is drawing text rows again instead of delegating to TaskRow"
+hasnt "Panel.qml" "WeekBars|weekTick|weekBars" \
+  "Panel.qml still mentions This week"
+hasnt "SettingsView.qml" "THIS WEEK|weekBarToggled|doneStatusToggled" \
+  "SettingsView.qml still exposes This week"
 
 lines=$(wc -l <"$ROOT/Panel.qml")
 if ((lines > 450)); then

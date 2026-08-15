@@ -13,18 +13,11 @@ Column {
   property string account: ""
   property string state: "ok"
 
-  property var week: null
-  property string weekState: "off"
-  property var weekBars: []
-  property string dueCoverage: ""
-  property var doneStatuses: []
   property bool connecting: false
   property string authMessage: ""
 
   signal spaceToggled(string key)
   signal allSpacesCleared()
-  signal weekBarToggled(string id)
-  signal doneStatusToggled(string name)
   signal connectRequested(string host, string token)
   signal disconnectRequested()
 
@@ -33,18 +26,6 @@ Column {
   readonly property color muted: Qt.darker(foreground, 1.5)
   readonly property color faint: Qt.darker(foreground, 1.9)
   readonly property bool followingAll: !followedSpaces || followedSpaces.length === 0
-
-  function countsAsDone(name) {
-    for (var i = 0; i < doneStatuses.length; i++) {
-      if (String(doneStatuses[i]).toLowerCase() === String(name).toLowerCase())
-        return true
-    }
-    return false
-  }
-
-  function showsBar(id) {
-    return weekBars.indexOf(String(id).toLowerCase()) !== -1
-  }
 
   function isFollowed(key) {
     if (followingAll)
@@ -172,80 +153,6 @@ Column {
     hint: qsTr("Clears the selection above")
     checked: false
     onActivated: root.allSpacesCleared()
-  }
-
-  SectionTitle { text: qsTr("THIS WEEK") }
-
-  Text {
-    width: parent.width
-    text: qsTr("Which progress bars to show above your tasks. Untick them all to turn the section off and stop asking Wrike for it.")
-    color: root.faint
-    font.family: root.fontFamily
-    font.pixelSize: Style.font.caption
-    wrapMode: Text.WordWrap
-  }
-
-  ToggleRow {
-    label: qsTr("Time")
-    hint: qsTr("How much of the week has elapsed")
-    checked: root.showsBar("time")
-    onActivated: root.weekBarToggled("time")
-  }
-
-  ToggleRow {
-    label: qsTr("Tasks")
-    hint: root.dueCoverage !== "" ? root.dueCoverage : qsTr("Tasks finished out of this week's plate")
-    checked: root.showsBar("tasks")
-    onActivated: root.weekBarToggled("tasks")
-  }
-
-  ToggleRow {
-    label: qsTr("Overdue")
-    hint: qsTr("Assigned work whose due date already passed")
-    checked: root.showsBar("overdue")
-    onActivated: root.weekBarToggled("overdue")
-  }
-
-  Text {
-    width: parent.width
-    visible: root.weekBars.length > 0
-    color: root.faint
-    font.family: root.fontFamily
-    font.pixelSize: Style.font.caption
-    wrapMode: Text.WordWrap
-    text: {
-      if (root.weekState === "unavailable")
-        return qsTr("Wrike did not answer for this week.")
-      return ""
-    }
-  }
-
-  SectionTitle {
-    text: qsTr("COUNTS AS DONE")
-    visible: root.week !== null && root.weekBars.length > 0
-  }
-
-  Text {
-    width: parent.width
-    visible: root.week !== null && root.weekBars.length > 0
-    text: qsTr("The statuses in this week's plate. Tick the ones your team treats as finished.")
-    color: root.faint
-    font.family: root.fontFamily
-    font.pixelSize: Style.font.caption
-    wrapMode: Text.WordWrap
-  }
-
-  Repeater {
-    model: (root.week !== null && root.weekBars.length > 0) ? (root.week.statuses || []) : []
-
-    ToggleRow {
-      required property var modelData
-
-      label: String(modelData.name || "")
-      hint: modelData.count + (modelData.count === 1 ? qsTr(" task") : qsTr(" tasks"))
-      checked: root.countsAsDone(String(modelData.name || ""))
-      onActivated: root.doneStatusToggled(String(modelData.name || ""))
-    }
   }
 
   SectionTitle { text: qsTr("CONNECTION") }

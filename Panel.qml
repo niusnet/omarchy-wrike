@@ -26,12 +26,6 @@ Panel {
   readonly property string listFilter: Model.normalizeFilter(wrike.setting("listFilter", "all"))
   readonly property string groupBy: Model.normalizeGroupBy(wrike.setting("groupBy", "space"))
 
-  property int weekTick: 0
-  readonly property var weekBars: {
-    weekTick
-    return Model.weekBars(wrike.week, wrike.weekBarChoice, Date.now(), wrike.doneStatuses)
-  }
-
   function setSetting(name, value) {
     var entry = { id: root.moduleName }
     for (var key in root.settings) {
@@ -49,15 +43,6 @@ Panel {
     for (var i = 0; i < wrike.projects.length; i++)
       keys.push(String(wrike.projects[i].key || ""))
     return keys
-  }
-
-  function toggleDoneStatus(name) {
-    setSetting("doneStatuses", Model.toggleDoneStatus(wrike.doneStatuses, name, Model.defaultDoneStatuses(wrike.week)))
-  }
-
-  function toggleWeekBar(id) {
-    setSetting("weekBars", Model.toggleWeekBar(wrike.weekBarChoice, id))
-    wrike.refresh()
   }
 
   function toggleSpace(key) {
@@ -193,13 +178,6 @@ Panel {
   }
 
   Timer {
-    interval: 60000
-    repeat: true
-    running: root.opened
-    onTriggered: root.weekTick++
-  }
-
-  Timer {
     id: confirmationTimer
 
     interval: 1500
@@ -298,16 +276,6 @@ Panel {
             foreground: root.foreground
             fontFamily: root.fontFamily
             onSettingsToggled: root.showSettings = !root.showSettings
-          }
-
-          WeekBars {
-            width: parent.width
-            visible: !root.showSettings && !root.showPreview
-            week: wrike.week
-            bars: root.weekBars
-            timeLeft: Model.weekTimeLeft(wrike.week, Date.now())
-            foreground: root.foreground
-            fontFamily: root.fontFamily
           }
 
           WrikeSearchField {
@@ -411,14 +379,7 @@ Panel {
             authMessage: wrike.authMessage
             foreground: root.foreground
             fontFamily: root.fontFamily
-            week: wrike.week
-            weekState: wrike.weekState
-            weekBars: wrike.weekBarChoice
-            dueCoverage: Model.dueCoverage(wrike.week)
-            doneStatuses: wrike.doneStatuses.length > 0 ? wrike.doneStatuses : Model.defaultDoneStatuses(wrike.week)
             onSpaceToggled: function (key) { root.toggleSpace(key) }
-            onWeekBarToggled: function (id) { root.toggleWeekBar(id) }
-            onDoneStatusToggled: function (name) { root.toggleDoneStatus(name) }
             onConnectRequested: function (host, token) { wrike.connectAccount(host, token) }
             onDisconnectRequested: wrike.disconnectAccount()
             onAllSpacesCleared: {
