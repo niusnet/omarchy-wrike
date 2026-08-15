@@ -32,7 +32,7 @@ Item {
   property bool previewPosting: false
   property string previewKey: ""
   property string previewAction: ""
-  property int commentsLimit: 5
+  property int commentsLimit: 10
 
   property bool connecting: false
   property string authMessage: ""
@@ -210,7 +210,7 @@ Item {
   function preview(taskId, fallback) {
     previewKey = String(taskId || "")
     previewTicket = fallback || null
-    commentsLimit = 5
+    commentsLimit = 10
     if (previewKey === "")
       return
     if (previewProcess.running)
@@ -224,7 +224,7 @@ Item {
   }
 
   function showMoreComments() {
-    commentsLimit += 5
+    commentsLimit += 10
   }
 
   function postComment(text) {
@@ -265,7 +265,7 @@ Item {
     previewLoading = false
     previewPosting = false
     previewAction = ""
-    commentsLimit = 5
+    commentsLimit = 10
     if (previewProcess.running)
       previewProcess.running = false
   }

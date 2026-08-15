@@ -626,7 +626,7 @@ function newestComments(comments, limit) {
   })
   var cap = Number(limit)
   if (!isFinite(cap) || cap < 1)
-    cap = 5
+    cap = 10
   return {
     items: list.slice(0, cap),
     remaining: Math.max(0, list.length - cap)

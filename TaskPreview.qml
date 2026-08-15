@@ -10,7 +10,9 @@ Column {
   property bool loading: false
   property bool posting: false
   property string actionMessage: ""
-  property int commentsLimit: 5
+  property int commentsLimit: 10
+  property string previewTab: "details"
+  readonly property string ticketId: ticket ? String(ticket.id || ticket.key || "") : ""
   property color foreground: "white"
   property string fontFamily: ""
 
@@ -34,6 +36,16 @@ Column {
   readonly property var commentPage: Model.newestComments(ticket ? ticket.comments : [], commentsLimit)
   readonly property string effortText: ticket ? Model.formatEffortMinutes(ticket.effortMinutes) : ""
   readonly property string pathText: ticket ? Model.breadcrumbText(ticket) : ""
+  readonly property int attachmentTotal: {
+    if (!ticket)
+      return 0
+    var count = Number(ticket.attachmentCount || 0)
+    if ((!count || count === 0) && ticket.attachments)
+      count = ticket.attachments.length
+    return count || 0
+  }
+
+  onTicketIdChanged: root.previewTab = "details"
 
   width: parent ? parent.width : 0
   spacing: Style.space(12)
@@ -49,7 +61,7 @@ Column {
     property string value: ""
     width: root.width
     spacing: Style.space(8)
-    visible: value !== ""
+    visible: value !== "" && root.previewTab === "details"
 
     Text {
       width: Style.space(72)
@@ -126,9 +138,32 @@ Column {
     }
   }
 
-  PanelSeparator { width: parent.width }
+  Row {
+    width: parent.width
+    spacing: Style.space(8)
 
-  SectionLabel { text: qsTr("DETAILS") }
+    Button {
+      text: qsTr("Details")
+      foreground: root.foreground
+      fontFamily: root.fontFamily
+      bordered: true
+      active: root.previewTab === "details"
+      onClicked: root.previewTab = "details"
+    }
+
+    Button {
+      text: qsTr("Attachments") + (root.attachmentTotal > 0 ? " · " + root.attachmentTotal : "")
+      foreground: root.foreground
+      fontFamily: root.fontFamily
+      bordered: true
+      active: root.previewTab === "attachments"
+      onClicked: root.previewTab = "attachments"
+    }
+  }
+
+  PanelSeparator { width: parent.width; visible: root.previewTab === "details" }
+
+  SectionLabel { visible: root.previewTab === "details"; text: qsTr("DETAILS") }
 
   MetaRow { label: qsTr("Space"); value: ticket ? String(ticket.spaceName || "") : "" }
   MetaRow { label: qsTr("Project"); value: ticket && String(ticket.projectName || "") !== String(ticket.spaceName || "") ? String(ticket.projectName || "") : "" }
@@ -138,47 +173,51 @@ Column {
   MetaRow { label: qsTr("Importance"); value: ticket ? String(ticket.importance || "") : "" }
   MetaRow { label: qsTr("Start"); value: ticket && ticket.start ? String(ticket.start).slice(0, 10) : "" }
   MetaRow { label: qsTr("Due"); value: ticket && ticket.due ? String(ticket.due).slice(0, 10) : "" }
-  MetaRow { label: qsTr("Effort"); value: root.effortText }
-  MetaRow {
-    label: qsTr("Attachments")
-    value: {
-      if (!ticket)
-        return ""
-      var count = Number(ticket.attachmentCount || 0)
-      if ((!count || count === 0) && ticket.attachments)
-        count = ticket.attachments.length
-      if (!count)
-        return ticket.hasAttachments ? qsTr("Yes") : ""
-      return String(count)
+  MetaRow { visible: root.previewTab === "details"; label: qsTr("Effort"); value: root.effortText }
+
+  Column {
+    width: parent.width
+    spacing: Style.space(6)
+    visible: root.previewTab === "attachments"
+
+    SectionLabel { text: qsTr("ATTACHMENTS") }
+
+    Text {
+      width: parent.width
+      visible: root.attachmentTotal === 0
+      text: qsTr("No attachments on this task.")
+      color: root.faint
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.bodySmall
     }
-  }
 
-  Repeater {
-    model: ticket && ticket.attachments ? ticket.attachments : []
+    Repeater {
+      model: ticket && ticket.attachments ? ticket.attachments : []
 
-    Button {
-      required property var modelData
-      width: root.width
-      text: String(modelData.name || qsTr("Attachment"))
-      foreground: root.foreground
-      fontFamily: root.fontFamily
-      leftAlign: true
-      bordered: true
-      onClicked: {
-        var url = String(modelData.url || "")
-        if (url !== "")
-          Qt.openUrlExternally(url)
+      Button {
+        required property var modelData
+        width: root.width
+        text: String(modelData.name || qsTr("Attachment"))
+        foreground: root.foreground
+        fontFamily: root.fontFamily
+        leftAlign: true
+        bordered: true
+        onClicked: {
+          var url = String(modelData.url || "")
+          if (url !== "")
+            Qt.openUrlExternally(url)
+        }
       }
     }
   }
 
-  PanelSeparator { width: parent.width }
+  PanelSeparator { width: parent.width; visible: root.previewTab === "details" }
 
-  SectionLabel { text: qsTr("DESCRIPTION") }
+  SectionLabel { visible: root.previewTab === "details"; text: qsTr("DESCRIPTION") }
 
   Text {
     width: parent.width
-    visible: root.loading && root.bodyText === ""
+    visible: root.previewTab === "details" && root.loading && root.bodyText === ""
     text: qsTr("Loading description")
     color: root.faint
     font.family: root.fontFamily
@@ -193,7 +232,7 @@ Column {
     clip: true
     boundsBehavior: Flickable.StopAtBounds
     flickableDirection: Flickable.VerticalFlick
-    visible: root.bodyText !== ""
+    visible: root.previewTab === "details" && root.bodyText !== ""
     interactive: contentHeight > height
 
     Text {
@@ -209,7 +248,7 @@ Column {
 
   Text {
     width: parent.width
-    visible: root.bodyText !== "" && descText.implicitHeight > Style.space(220)
+    visible: root.previewTab === "details" && root.bodyText !== "" && descText.implicitHeight > Style.space(220)
     text: qsTr("Scroll to read the full description")
     color: root.faint
     font.family: root.fontFamily
@@ -218,19 +257,20 @@ Column {
 
   Text {
     width: parent.width
-    visible: !root.loading && root.bodyText === ""
+    visible: root.previewTab === "details" && !root.loading && root.bodyText === ""
     text: qsTr("No description on this task.")
     color: root.faint
     font.family: root.fontFamily
     font.pixelSize: Style.font.bodySmall
   }
 
-  PanelSeparator { width: parent.width }
+  PanelSeparator { width: parent.width; visible: root.previewTab === "details" }
 
-  SectionLabel { text: qsTr("LOG TIME") }
+  SectionLabel { visible: root.previewTab === "details"; text: qsTr("LOG TIME") }
 
   Row {
     width: parent.width
+    visible: root.previewTab === "details"
     spacing: Style.space(8)
 
     TextField {
@@ -263,41 +303,55 @@ Column {
     }
   }
 
-  PanelSeparator { width: parent.width }
+  PanelSeparator { width: parent.width; visible: root.previewTab === "details" }
 
-  SectionLabel { text: qsTr("COMMENTS") }
+  SectionLabel { visible: root.previewTab === "details"; text: qsTr("COMMENTS") }
 
   Repeater {
-    model: root.commentPage.items
+    model: root.previewTab === "details" ? root.commentPage.items : []
 
-    Column {
+    Rectangle {
       required property var modelData
       width: root.width
-      spacing: Style.space(2)
+      height: commentBody.implicitHeight + Style.space(10)
+      radius: Style.cornerRadius
+      color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.06)
+      border.width: 1
+      border.color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.12)
 
-      Text {
-        width: parent.width
-        text: String(modelData.author || qsTr("Someone")) + "  ·  " + Model.relativeTime(modelData.created, Date.now())
-        color: root.faint
-        font.family: root.fontFamily
-        font.pixelSize: Style.font.caption
-        font.bold: true
-      }
+      Column {
+        id: commentBody
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.verticalCenter: parent.verticalCenter
+        anchors.leftMargin: Style.space(8)
+        anchors.rightMargin: Style.space(8)
+        spacing: Style.space(3)
 
-      Text {
-        width: parent.width
-        text: Model.stripHtml(modelData.text)
-        color: root.muted
-        font.family: root.fontFamily
-        font.pixelSize: Style.font.bodySmall
-        wrapMode: Text.WordWrap
+        Text {
+          width: parent.width
+          text: String(modelData.author || qsTr("Someone")) + "  ·  " + Model.relativeTime(modelData.created, Date.now())
+          color: root.faint
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+          font.bold: true
+        }
+
+        Text {
+          width: parent.width
+          text: Model.stripHtml(modelData.text)
+          color: root.muted
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.bodySmall
+          wrapMode: Text.WordWrap
+        }
       }
     }
   }
 
   Text {
     width: parent.width
-    visible: root.commentPage.items.length === 0
+    visible: root.previewTab === "details" && root.commentPage.items.length === 0
     text: qsTr("No comments yet.")
     color: root.faint
     font.family: root.fontFamily
@@ -305,16 +359,23 @@ Column {
   }
 
   Button {
-    visible: root.commentPage.remaining > 0
-    text: qsTr("Load more") + " · " + root.commentPage.remaining
+    visible: root.previewTab === "details"
+    enabled: root.commentPage.remaining > 0
+    text: root.commentPage.remaining > 0
+      ? qsTr("Load more") + " · " + root.commentPage.remaining
+      : qsTr("All comments loaded")
     foreground: root.foreground
     fontFamily: root.fontFamily
     bordered: true
-    onClicked: root.moreCommentsRequested()
+    onClicked: {
+      if (root.commentPage.remaining > 0)
+        root.moreCommentsRequested()
+    }
   }
 
   TextField {
     id: commentField
+    visible: root.previewTab === "details"
     width: parent.width
     foreground: root.foreground
     font.family: root.fontFamily
@@ -322,6 +383,7 @@ Column {
   }
 
   Button {
+    visible: root.previewTab === "details"
     text: root.posting ? qsTr("Sending") : qsTr("Send comment")
     foreground: root.foreground
     fontFamily: root.fontFamily
@@ -336,7 +398,7 @@ Column {
 
   Text {
     width: parent.width
-    visible: root.actionMessage !== ""
+    visible: root.previewTab === "details" && root.actionMessage !== ""
     text: root.actionMessage
     color: root.muted
     font.family: root.fontFamily
