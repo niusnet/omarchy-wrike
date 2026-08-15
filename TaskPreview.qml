@@ -185,14 +185,35 @@ Column {
     font.pixelSize: Style.font.bodySmall
   }
 
+  Flickable {
+    width: parent.width
+    height: Math.min(Style.space(220), Math.max(Style.space(80), descText.implicitHeight + Style.space(8)))
+    contentWidth: width
+    contentHeight: descText.implicitHeight + Style.space(8)
+    clip: true
+    boundsBehavior: Flickable.StopAtBounds
+    flickableDirection: Flickable.VerticalFlick
+    visible: root.bodyText !== ""
+    interactive: contentHeight > height
+
+    Text {
+      id: descText
+      width: parent.width
+      text: root.bodyText
+      color: root.muted
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.bodySmall
+      wrapMode: Text.WordWrap
+    }
+  }
+
   Text {
     width: parent.width
-    visible: root.bodyText !== ""
-    text: root.bodyText
-    color: root.muted
+    visible: root.bodyText !== "" && descText.implicitHeight > Style.space(220)
+    text: qsTr("Scroll to read the full description")
+    color: root.faint
     font.family: root.fontFamily
-    font.pixelSize: Style.font.bodySmall
-    wrapMode: Text.WordWrap
+    font.pixelSize: Style.font.caption
   }
 
   Text {

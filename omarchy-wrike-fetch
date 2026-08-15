@@ -314,6 +314,37 @@ fetch_folder_index() {
   fi
 }
 
+enrich_attachment_urls() {
+  local file="$1" id url tmp code status=0
+  local ids=()
+  mapfile -t ids < <(jq -r '.data[0:20][]?.id // empty' <"$file" 2>/dev/null || true) || true
+  ((${#ids[@]} > 0)) || return 0
+
+  local urls='{}' next
+  for id in "${ids[@]}"; do
+    [[ -n $id ]] || continue
+    tmp=$(mktemp)
+    status=0
+    code=$(api_request "$token" "$base/attachments/$id/url" "$tmp") || status=$?
+    url=""
+    if ((status == 0)) && [[ $code == 200 ]]; then
+      url=$(jq -r '.data[0].url // empty' <"$tmp" 2>/dev/null || true)
+    fi
+    rm -f "$tmp"
+    next=$(jq -c --arg id "$id" --arg url "$url" '.[$id]=$url' <<<"$urls" 2>/dev/null || true)
+    [[ -n $next ]] && urls="$next"
+  done
+
+  local enriched
+  enriched=$(mktemp)
+  if jq --argjson urls "$urls" '.data |= map(. + {url: ($urls[.id] // .url // "")})' \
+    <"$file" >"$enriched" 2>/dev/null; then
+    cat "$enriched" >"$file"
+  fi
+  rm -f "$enriched"
+  return 0
+}
+
 fetch_preview_extras() {
   local task="$1"
   COMMENTS_FILE=$(mktemp)
@@ -335,6 +366,8 @@ fetch_preview_extras() {
   code=$(api_request "$token" "$base/tasks/$task/attachments" "$ATTACHMENTS_FILE") || status=$?
   if ((status != 0)) || [[ $code != 200 ]] || ! jq -e . >/dev/null 2>&1 <"$ATTACHMENTS_FILE"; then
     printf '{"data":[]}' >"$ATTACHMENTS_FILE"
+  else
+    enrich_attachment_urls "$ATTACHMENTS_FILE"
   fi
 
   local authors
@@ -413,8 +446,10 @@ search_by_permalink() {
 search_by_api_id() {
   local id="$1" status=0 code file
   file=$(mktemp)
+  # Single-task GET already includes description, parents, and hasAttachments.
+  # Asking for those as `fields` is a 400 on this API and drops the whole preview.
   code=$(api_request "$token" "$base/tasks/$id" "$file" --get \
-    --data-urlencode 'fields=["parentIds","superParentIds","briefDescription","description","effortAllocation","attachmentCount","hasAttachments"]') || status=$?
+    --data-urlencode 'fields=["effortAllocation","attachmentCount"]') || status=$?
   if ((status != 0)); then
     rm -f "$file"
     emit "network-error" "Could not reach $host." "$host" "$account"
@@ -620,6 +655,7 @@ if [[ $mode != "search" ]]; then
   fetch_folder_index
   if [[ $mode == "preview" ]]; then
     preview_id=$(jq -r '.data[0].id // empty' <"$TASKS_FILE" 2>/dev/null || true)
+    [[ -n $preview_id ]] || preview_id=$(trim "$task_id")
     fetch_preview_extras "$preview_id"
   fi
 fi

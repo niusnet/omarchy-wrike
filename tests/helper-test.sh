@@ -89,6 +89,8 @@ elif [[ $url == *"/folders"* ]]; then
   [[ -n $output ]] && cat "$FIXTURE_DIR/folders.json" >"$output"
 elif [[ $url == *"/comments"* ]]; then
   [[ -n $output ]] && cat "$FIXTURE_DIR/comments.json" >"$output"
+elif [[ $url == *"/attachments/"*"/url"* ]]; then
+  [[ -n $output ]] && printf '%s' '{"data":[{"url":"https://www.wrike.com/open.htm?id=109"}]}' >"$output"
 elif [[ $url == *"/attachments"* ]]; then
   [[ -n $output ]] && cat "$FIXTURE_DIR/attachments.json" >"$output"
 elif [[ $url == *"/contacts"* ]]; then

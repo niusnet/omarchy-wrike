@@ -442,6 +442,9 @@ function stripHtml(value) {
     return ""
   html = html.replace(/<\s*br\s*\/?\s*>/gi, "\n")
   html = html.replace(/<\s*\/\s*p\s*>/gi, "\n")
+  html = html.replace(/<\s*\/\s*div\s*>/gi, "\n")
+  html = html.replace(/<\s*\/\s*li\s*>/gi, "\n")
+  html = html.replace(/<\s*li[^>]*>/gi, "• ")
   html = html.replace(/<[^>]+>/g, "")
   html = html.replace(/&nbsp;/gi, " ")
   html = html.replace(/&amp;/gi, "&")
