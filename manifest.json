@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "id": "niusnet.wrike",
+  "name": "Wrike",
+  "version": "0.1.0",
+  "author": "niusnet",
+  "license": "MIT",
+  "description": "The Wrike tasks waiting on you, with search across your whole account.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "activation": "on-demand",
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Wrike",
+    "description": "Tasks assigned to you, split into what is in progress and what is still to do, with search by permalink id or title across the whole account.",
+    "category": "Development",
+    "aliases": [
+      "wrike",
+      "tasks",
+      "work"
+    ],
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "refreshIntervalSec": 900,
+      "maxDisplayedTickets": 25
+    },
+    "schema": [
+      {
+        "key": "refreshIntervalSec",
+        "type": "integer",
+        "label": "Refresh interval (seconds)",
+        "min": 60,
+        "max": 3600,
+        "step": 60,
+        "defaultValue": 900
+      },
+      {
+        "key": "maxDisplayedTickets",
+        "type": "integer",
+        "label": "Maximum displayed tasks",
+        "min": 5,
+        "max": 100,
+        "step": 5,
+        "defaultValue": 25
+      }
+    ]
+  }
+}

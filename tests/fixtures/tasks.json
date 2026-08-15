@@ -1,0 +1,66 @@
+{
+  "kind": "tasks",
+  "data": [
+    {
+      "id": "IEAAAAAOKQAAAAA1",
+      "title": "Refresh card limit",
+      "status": "Active",
+      "customStatusId": "IEAAAAAASTATUS01",
+      "importance": "High",
+      "permalink": "https://www.wrike.com/open.htm?id=101",
+      "updatedDate": "2026-08-14T06:24:20Z",
+      "createdDate": "2026-08-01T10:00:00Z",
+      "dates": { "type": "Planned", "start": "2026-08-10", "due": "2026-08-15" },
+      "parentIds": ["IEAAAADEMO000001"]
+    },
+    {
+      "id": "IEAAAAAOKQAAAAA2",
+      "title": "Retry failed supplier payments",
+      "status": "Active",
+      "customStatusId": "IEAAAAAASTATUS02",
+      "importance": "Normal",
+      "permalink": "https://www.wrike.com/open.htm?id=102",
+      "updatedDate": "2026-08-12T11:02:00Z",
+      "createdDate": "2026-08-02T10:00:00Z",
+      "dates": { "type": "Planned", "start": "2026-08-01", "due": "2026-08-08" },
+      "parentIds": ["IEAAAADEMO000001"]
+    },
+    {
+      "id": "IEAAAAAOKQAAAAA3",
+      "title": "Freeze lock files",
+      "status": "Active",
+      "customStatusId": "IEAAAAAASTATUS00",
+      "importance": "Normal",
+      "permalink": "https://www.wrike.com/open.htm?id=103",
+      "updatedDate": "2026-06-12T16:29:09Z",
+      "createdDate": "2026-06-01T10:00:00Z",
+      "dates": { "type": "Backlog" },
+      "parentIds": ["IEAAAADEMO000001"]
+    },
+    {
+      "id": "IEAAAAAOKQAAAAA4",
+      "title": "Duplicate group members",
+      "status": "Deferred",
+      "customStatusId": "IEAAAAAASTATUS03",
+      "importance": "Low",
+      "permalink": "https://www.wrike.com/open.htm?id=104",
+      "updatedDate": "2026-05-02T09:15:00Z",
+      "createdDate": "2026-05-01T10:00:00Z",
+      "dates": { "type": "Backlog" },
+      "parentIds": ["IEAAAAOPS0000002"]
+    },
+    {
+      "id": "IEAAAAAOKQAAAAA5",
+      "title": "Traveler names",
+      "status": "Completed",
+      "customStatusId": "IEAAAAAASTATUS99",
+      "importance": "Normal",
+      "permalink": "https://www.wrike.com/open.htm?id=105",
+      "updatedDate": "2026-02-09T14:27:44Z",
+      "completedDate": "2026-02-09T14:27:44Z",
+      "createdDate": "2026-02-01T10:00:00Z",
+      "dates": { "type": "Planned", "start": "2026-02-01", "due": "2026-02-09" },
+      "parentIds": ["IEAAAADEMO000001"]
+    }
+  ]
+}

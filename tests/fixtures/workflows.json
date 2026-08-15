@@ -1,0 +1,18 @@
+{
+  "kind": "workflows",
+  "data": [
+    {
+      "id": "IEAAAAWORKFLOW01",
+      "name": "Default",
+      "standard": true,
+      "hidden": false,
+      "customStatuses": [
+        { "id": "IEAAAAAASTATUS00", "name": "New", "group": "Active", "hidden": false, "standard": true, "standardName": true },
+        { "id": "IEAAAAAASTATUS01", "name": "In Progress", "group": "Active", "hidden": false, "standard": false, "standardName": false },
+        { "id": "IEAAAAAASTATUS02", "name": "Review", "group": "Active", "hidden": false, "standard": false, "standardName": false },
+        { "id": "IEAAAAAASTATUS03", "name": "On Hold", "group": "Deferred", "hidden": false, "standard": false, "standardName": false },
+        { "id": "IEAAAAAASTATUS99", "name": "Completed", "group": "Completed", "hidden": false, "standard": true, "standardName": true }
+      ]
+    }
+  ]
+}

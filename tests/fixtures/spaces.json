@@ -1,0 +1,7 @@
+{
+  "kind": "spaces",
+  "data": [
+    { "id": "IEAAAADEMO000001", "title": "Demo", "accessType": "Private", "archived": false },
+    { "id": "IEAAAAOPS0000002", "title": "Operations", "accessType": "Private", "archived": false }
+  ]
+}

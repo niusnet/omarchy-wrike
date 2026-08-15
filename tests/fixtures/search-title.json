@@ -1,0 +1,15 @@
+{
+  "kind": "tasks",
+  "data": [
+    {
+      "id": "IEAAAAAOKQAAAAA2",
+      "title": "Retry failed supplier payments",
+      "status": "Active",
+      "customStatusId": "IEAAAAAASTATUS02",
+      "permalink": "https://www.wrike.com/open.htm?id=102",
+      "updatedDate": "2026-08-12T11:02:00Z",
+      "dates": { "type": "Planned", "start": "2026-08-01", "due": "2026-08-08" },
+      "parentIds": ["IEAAAADEMO000001"]
+    }
+  ]
+}

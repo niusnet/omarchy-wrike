@@ -1,0 +1,16 @@
+{
+  "kind": "tasks",
+  "data": [
+    {
+      "id": "IEAAAAAOKQAAAAA6",
+      "title": "Ship release notes",
+      "status": "Completed",
+      "customStatusId": "IEAAAAAASTATUS99",
+      "permalink": "https://www.wrike.com/open.htm?id=106",
+      "updatedDate": "2026-08-12T16:00:00Z",
+      "completedDate": "2026-08-12T16:00:00Z",
+      "dates": { "type": "Planned", "start": "2026-08-10", "due": "2026-08-12" },
+      "parentIds": ["IEAAAADEMO000001"]
+    }
+  ]
+}

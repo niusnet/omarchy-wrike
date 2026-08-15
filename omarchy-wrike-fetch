@@ -1,0 +1,647 @@
+#!/usr/bin/env bash
+# Fetches the Wrike work assigned to the connected account and prints one JSON
+# document on stdout.
+#
+# Two rules govern this file.
+#
+# It always exits zero for anything the user can encounter: no credential, a
+# locked keyring, an expired token, an unreachable network. Those are states of
+# the world, not crashes, and each one is described in the payload so the panel
+# can render a specific message instead of guessing from an exit code. A non
+# zero exit means the helper itself is broken.
+#
+# It never keys off a status name. Every Wrike account names its custom
+# statuses freely, so the only portable signals are the status group (Active,
+# Completed, Cancelled, Deferred) and whether a task has already started.
+set -euo pipefail
+
+readonly SERVICE="omarchy-wrike"
+readonly SCHEMA_VERSION=1
+readonly DEFAULT_MAX=100
+
+mode="dashboard"
+search_query=""
+want_week=0
+spaces_filter=""
+max_results="$DEFAULT_MAX"
+
+TASKS_FILE=""
+COMPLETED_FILE=""
+SPACES_FILE=""
+WORKFLOWS_FILE=""
+SEARCH_FILE=""
+IDS_FILE=""
+cleanup() {
+  [[ -n $TASKS_FILE ]] && rm -f "$TASKS_FILE"
+  [[ -n $COMPLETED_FILE ]] && rm -f "$COMPLETED_FILE"
+  [[ -n $SPACES_FILE ]] && rm -f "$SPACES_FILE"
+  [[ -n $WORKFLOWS_FILE ]] && rm -f "$WORKFLOWS_FILE"
+  [[ -n $SEARCH_FILE ]] && rm -f "$SEARCH_FILE"
+  [[ -n $IDS_FILE ]] && rm -f "$IDS_FILE"
+  return 0
+}
+trap cleanup EXIT
+
+usage() {
+  cat <<'USAGE'
+Usage: omarchy-wrike-fetch [--spaces ID[,ID...]] [--max N] [--week]
+       omarchy-wrike-fetch --search QUERY
+
+Prints one JSON document describing the tasks assigned to the connected
+account, or the tasks matching a search. Run omarchy-wrike-auth first to
+connect an account.
+
+  --spaces   Restrict the dashboard to these space ids
+  --search   Search the whole account by permalink id or title
+  --week     Also report this week's progress
+  --max      Maximum tasks to request, 1 to 100 (default 100)
+  --help     Show this message
+USAGE
+}
+
+emit() {
+  local state="$1" message="$2" host="${3:-}" account="${4:-}"
+  jq -n \
+    --argjson schema "$SCHEMA_VERSION" \
+    --arg mode "$mode" \
+    --arg state "$state" \
+    --arg message "$message" \
+    --arg site "$host" \
+    --arg account "$account" \
+    '{
+      schema: $schema,
+      mode: $mode,
+      generatedAt: (now | todate),
+      state: $state,
+      message: $message,
+      site: $site,
+      account: $account,
+      tickets: [],
+      projects: [],
+      week: null,
+      weekState: "off"
+    }'
+  exit 0
+}
+
+emit_results() {
+  local host="$2" account="$3"
+  jq -n \
+    --argjson schema "$SCHEMA_VERSION" \
+    --arg mode "$mode" \
+    --arg site "$host" \
+    --arg account "$account" \
+    '{
+      schema: $schema,
+      mode: $mode,
+      generatedAt: (now | todate),
+      state: "ok",
+      message: "",
+      site: $site,
+      account: $account,
+      tickets: [],
+      projects: [],
+      week: null,
+      weekState: "off"
+    }'
+  exit 0
+}
+
+# A space id is an opaque Wrike identifier. Anything that is not a plausible
+# id is dropped rather than escaped, because a malformed one has no business
+# reaching a query string.
+sanitize_spaces() {
+  local raw="$1" id cleaned=()
+  raw="${raw//,/ }"
+  for id in $raw; do
+    if [[ $id =~ ^[A-Za-z0-9_.:-]{1,256}$ ]]; then
+      cleaned+=("$id")
+    fi
+  done
+  local IFS=,
+  printf '%s' "${cleaned[*]-}"
+}
+
+trim() {
+  local value="$1"
+  value="${value#"${value%%[![:space:]]*}"}"
+  printf '%s' "${value%"${value##*[![:space:]]}"}"
+}
+
+# Performs one authenticated request and writes the body to a file. The token
+# goes through a config file on a pipe, never through an argument.
+api_request() {
+  local token="$1" url="$2" out="$3"
+  shift 3
+  curl --silent --show-error --max-time 20 \
+    --config <(printf 'header = "Authorization: Bearer %s"\n' "$token") \
+    --header 'Accept: application/json' \
+    --output "$out" \
+    --write-out '%{http_code}' \
+    --url "$url" \
+    "$@"
+}
+
+CREDENTIAL=""
+CREDENTIAL_STATE="ok"
+read_credential() {
+  local stderr_file status
+  stderr_file=$(mktemp)
+  status=0
+  CREDENTIAL=$(secret-tool lookup service "$SERVICE" 2>"$stderr_file") || status=$?
+
+  if ((status != 0)); then
+    if [[ -s $stderr_file ]]; then
+      CREDENTIAL_STATE="keyring-unavailable"
+    else
+      CREDENTIAL_STATE="unconfigured"
+    fi
+  elif [[ -z $CREDENTIAL ]]; then
+    CREDENTIAL_STATE="unconfigured"
+  fi
+
+  rm -f "$stderr_file"
+}
+
+field() {
+  local name="$1" json="$2"
+  printf '%s' "$json" | jq -r --arg name "$name" '.[$name] // empty'
+}
+
+handle_http() {
+  local code="$1" host="$2" account="$3"
+  case "$code" in
+  200) return 0 ;;
+  401)
+    emit "unauthorized" "Wrike rejected the stored token. Run omarchy-wrike-auth to reconnect." "$host" "$account"
+    ;;
+  403)
+    emit "forbidden" "This account is not permitted to read those tasks." "$host" "$account"
+    ;;
+  *)
+    emit "error" "Wrike answered $code." "$host" "$account"
+    ;;
+  esac
+}
+
+# Monday 00:00 UTC of the current week, and the following Monday. Tests pin the
+# clock with WRIKE_NOW so the week bounds are deterministic.
+week_start=""
+week_end=""
+compute_week() {
+  local now_utc now_date dow offset
+  now_utc="${WRIKE_NOW:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
+  now_date="${now_utc%%T*}"
+  dow=$(date -u -d "$now_date" +%u)
+  offset=$((dow - 1))
+  week_start=$(date -u -d "$now_date - $offset days" +%Y-%m-%d)
+  week_end=$(date -u -d "$week_start + 7 days" +%Y-%m-%d)
+}
+
+# GET /tasks (account or one space) with the shared assigned-work filters.
+# Leaves the body in $1. Prints the HTTP code.
+fetch_assigned() {
+  local out="$1"
+  shift
+  local url="$1"
+  shift || true
+  local status=0 code
+  code=$(api_request "$token" "$url" "$out" --get \
+    --data-urlencode "responsibles=[\"$user_id\"]" \
+    --data-urlencode 'status=["Active","Deferred"]' \
+    --data-urlencode 'fields=["parentIds","superParentIds"]' \
+    --data-urlencode "sortField=UpdatedDate" \
+    --data-urlencode "sortOrder=Desc" \
+    --data-urlencode "pageSize=$max_results" \
+    --data-urlencode "subTasks=true" \
+    "$@") || status=$?
+  if ((status != 0)); then
+    printf '0'
+    return 0
+  fi
+  printf '%s' "$code"
+}
+
+merge_task_pages() {
+  local dest="$1"
+  shift
+  if (($# == 0)); then
+    printf '{"data":[]}' >"$dest"
+    return 0
+  fi
+  jq -s '{data: [.[].data[]?]}' "$@" >"$dest"
+}
+
+# When the user follows specific spaces, query each space rather than guessing
+# which parent folder belongs to which space. Account-level /tasks does not
+# expose a space filter.
+fetch_dashboard_tasks() {
+  local dest="$1" code
+  if [[ -z $spaces_filter ]]; then
+    code=$(fetch_assigned "$dest" "$base/tasks")
+    if [[ $code == 0 ]]; then
+      emit "network-error" "Could not reach $host." "$host" "$account"
+    fi
+    handle_http "$code" "$host" "$account"
+    return 0
+  fi
+
+  local id pages=() page
+  IFS=',' read -r -a ids <<<"$spaces_filter"
+  for id in "${ids[@]}"; do
+    page=$(mktemp)
+    code=$(fetch_assigned "$page" "$base/spaces/$id/tasks" --data-urlencode "descendants=true")
+    if [[ $code == 0 ]]; then
+      rm -f "$page"
+      emit "network-error" "Could not reach $host." "$host" "$account"
+    fi
+    if [[ $code == 401 || $code == 403 ]]; then
+      rm -f "$page"
+      handle_http "$code" "$host" "$account"
+    fi
+    if [[ $code == 200 ]] && jq -e . >/dev/null 2>&1 <"$page"; then
+      pages+=("$page")
+    else
+      rm -f "$page"
+    fi
+  done
+
+  merge_task_pages "$dest" "${pages[@]+"${pages[@]}"}"
+  for page in "${pages[@]+"${pages[@]}"}"; do
+    rm -f "$page"
+  done
+}
+
+fetch_completed_week() {
+  COMPLETED_FILE=$(mktemp)
+  local status=0 code
+  code=$(api_request "$token" "$base/tasks" "$COMPLETED_FILE" --get \
+    --data-urlencode "responsibles=[\"$user_id\"]" \
+    --data-urlencode 'status=["Completed"]' \
+    --data-urlencode "completedDate={\"start\":\"${week_start}T00:00:00Z\",\"end\":\"${week_end}T00:00:00Z\"}" \
+    --data-urlencode 'fields=["parentIds","superParentIds"]' \
+    --data-urlencode "pageSize=$max_results") || status=$?
+  if ((status != 0)) || [[ $code != 200 ]] || ! jq -e . >/dev/null 2>&1 <"$COMPLETED_FILE"; then
+    printf '{"data":[]}' >"$COMPLETED_FILE"
+  fi
+}
+
+search_by_permalink() {
+  local query="$1" status=0 code api_id
+  IDS_FILE=$(mktemp)
+  code=$(api_request "$token" "$base/ids" "$IDS_FILE" --get \
+    --data-urlencode "ids=[\"$query\"]" \
+    --data-urlencode "type=ApiV2Task") || status=$?
+  if ((status != 0)); then
+    emit "network-error" "Could not reach $host." "$host" "$account"
+  fi
+  if [[ $code == 401 || $code == 403 ]]; then
+    handle_http "$code" "$host" "$account"
+  fi
+  if [[ $code != 200 ]]; then
+    printf '{"data":[]}'
+    return 0
+  fi
+  api_id=$(jq -r '.data[0].id // empty' <"$IDS_FILE" 2>/dev/null || true)
+  if [[ -z $api_id ]]; then
+    printf '{"data":[]}'
+    return 0
+  fi
+  search_by_api_id "$api_id"
+}
+
+search_by_api_id() {
+  local id="$1" status=0 code file
+  file=$(mktemp)
+  code=$(api_request "$token" "$base/tasks/$id" "$file" --get \
+    --data-urlencode 'fields=["parentIds","superParentIds"]') || status=$?
+  if ((status != 0)); then
+    rm -f "$file"
+    emit "network-error" "Could not reach $host." "$host" "$account"
+  fi
+  if [[ $code == 401 || $code == 403 ]]; then
+    rm -f "$file"
+    handle_http "$code" "$host" "$account"
+  fi
+  if [[ $code != 200 ]] || ! jq -e . >/dev/null 2>&1 <"$file"; then
+    rm -f "$file"
+    printf '{"data":[]}'
+    return 0
+  fi
+  cat "$file"
+  rm -f "$file"
+}
+
+search_by_title() {
+  local query="$1" status=0 code
+  SEARCH_FILE=$(mktemp)
+  code=$(api_request "$token" "$base/tasks" "$SEARCH_FILE" --get \
+    --data-urlencode "title=$query" \
+    --data-urlencode 'fields=["parentIds","superParentIds"]' \
+    --data-urlencode "sortField=UpdatedDate" \
+    --data-urlencode "sortOrder=Desc" \
+    --data-urlencode "pageSize=$max_results" \
+    --data-urlencode "subTasks=true") || status=$?
+  if ((status != 0)); then
+    emit "network-error" "Could not reach $host." "$host" "$account"
+  fi
+  if [[ $code == 401 || $code == 403 ]]; then
+    handle_http "$code" "$host" "$account"
+  fi
+  if [[ $code != 200 ]]; then
+    printf '{"data":[]}'
+    return 0
+  fi
+  cat "$SEARCH_FILE"
+}
+
+while (($# > 0)); do
+  case "$1" in
+  --spaces)
+    spaces_filter=$(sanitize_spaces "${2:-}")
+    shift 2
+    ;;
+  --search)
+    mode="search"
+    search_query="${2:-}"
+    shift 2
+    ;;
+  --week)
+    want_week=1
+    shift
+    ;;
+  --max)
+    max_results="${2:-$DEFAULT_MAX}"
+    [[ $max_results =~ ^[0-9]+$ ]] || {
+      echo "omarchy-wrike-fetch: --max must be a number" >&2
+      exit 2
+    }
+    ((max_results < 1)) && max_results=1
+    ((max_results > 100)) && max_results=100
+    shift 2
+    ;;
+  -h | --help)
+    usage
+    exit 0
+    ;;
+  *)
+    echo "omarchy-wrike-fetch: unknown option: $1" >&2
+    exit 2
+    ;;
+  esac
+done
+
+for tool in curl jq; do
+  command -v "$tool" >/dev/null 2>&1 || {
+    echo "omarchy-wrike-fetch: $tool is required but was not found on PATH" >&2
+    exit 2
+  }
+done
+
+command -v secret-tool >/dev/null 2>&1 ||
+  emit "keyring-unavailable" "secret-tool was not found. Install libsecret to store the Wrike token."
+
+read_credential
+case "$CREDENTIAL_STATE" in
+keyring-unavailable)
+  emit "keyring-unavailable" "The system keyring did not answer. Check that gnome-keyring is running."
+  ;;
+unconfigured)
+  emit "unconfigured" "Not connected to Wrike. Run omarchy-wrike-auth to connect an account."
+  ;;
+esac
+
+host=$(field host "$CREDENTIAL")
+account=$(field account "$CREDENTIAL")
+base=$(field base "$CREDENTIAL")
+token=$(field token "$CREDENTIAL")
+user_id=$(field userId "$CREDENTIAL")
+
+if [[ -z $host || -z $account || -z $base || -z $token || -z $user_id ]]; then
+  emit "unconfigured" "The stored Wrike credential is incomplete. Run omarchy-wrike-auth again."
+fi
+
+TASKS_FILE=$(mktemp)
+printf '{"data":[]}' >"$TASKS_FILE"
+
+if [[ $mode == "search" ]]; then
+  trimmed_query=$(trim "$search_query")
+  if [[ -z $trimmed_query ]]; then
+    emit_results "" "$host" "$account"
+  fi
+
+  if [[ $trimmed_query =~ ^[0-9]+$ ]]; then
+    search_by_permalink "$trimmed_query" >"$TASKS_FILE"
+  elif [[ $trimmed_query =~ ^[A-Za-z0-9]{16,256}$ ]]; then
+    # Wrike API ids are long opaque tokens. Short words are titles.
+    search_by_api_id "$trimmed_query" >"$TASKS_FILE"
+  else
+    search_by_title "$trimmed_query" >"$TASKS_FILE"
+  fi
+else
+  fetch_dashboard_tasks "$TASKS_FILE"
+fi
+
+jq -e . >/dev/null 2>&1 <"$TASKS_FILE" ||
+  emit "error" "Wrike returned a response this plugin could not read." "$host" "$account"
+
+SPACES_FILE=$(mktemp)
+printf '{"data":[]}' >"$SPACES_FILE"
+WORKFLOWS_FILE=$(mktemp)
+printf '{"data":[]}' >"$WORKFLOWS_FILE"
+COMPLETED_FILE=$(mktemp)
+printf '{"data":[]}' >"$COMPLETED_FILE"
+
+if [[ $mode != "search" ]]; then
+  spaces_status=0
+  spaces_code=$(api_request "$token" "$base/spaces" "$SPACES_FILE" --get \
+    --data-urlencode "userIsMember=true") || spaces_status=$?
+  if ((spaces_status != 0)) || [[ $spaces_code != 200 ]] ||
+    ! jq -e . >/dev/null 2>&1 <"$SPACES_FILE"; then
+    printf '{"data":[]}' >"$SPACES_FILE"
+  fi
+
+  workflows_status=0
+  workflows_code=$(api_request "$token" "$base/workflows" "$WORKFLOWS_FILE") || workflows_status=$?
+  if ((workflows_status != 0)) || [[ $workflows_code != 200 ]] ||
+    ! jq -e . >/dev/null 2>&1 <"$WORKFLOWS_FILE"; then
+    printf '{"data":[]}' >"$WORKFLOWS_FILE"
+  fi
+
+  if ((want_week == 1)); then
+    compute_week
+    fetch_completed_week
+  fi
+fi
+
+# Shared jq used to turn a Wrike task into the panel's row shape. Custom
+# status names are labels; the category is always derived from the group and
+# from whether the task has already started.
+jq -n \
+  --argjson schema "$SCHEMA_VERSION" \
+  --arg mode "$mode" \
+  --arg site "$host" \
+  --arg account "$account" \
+  --arg weekStart "${week_start:-}" \
+  --arg weekEnd "${week_end:-}" \
+  --arg spacesFilter "$spaces_filter" \
+  --argjson wantWeek "$want_week" \
+  --slurpfile tasks "$TASKS_FILE" \
+  --slurpfile completed "$COMPLETED_FILE" \
+  --slurpfile spaces "$SPACES_FILE" \
+  --slurpfile workflows "$WORKFLOWS_FILE" \
+  '
+  def parse_date:
+    if . == null or . == "" then empty
+    elif test("Z$") then fromdateiso8601
+    elif test("T") then (. + "Z" | fromdateiso8601)
+    else (. + "T00:00:00Z" | fromdateiso8601)
+    end;
+
+  def started:
+    (.dates.type // "") as $type
+    | if $type == "Planned" then
+        ((.dates.start // "") | parse_date? // null) as $start
+        | $start != null and $start <= now
+      elif $type == "Milestone" then
+        ((.dates.due // "") | parse_date? // null) as $due
+        | $due != null and $due <= now
+      else
+        false
+      end;
+
+  def category:
+    if (.status == "Completed" or .status == "Cancelled") then "done"
+    elif (.status == "Active" and started) then "indeterminate"
+    else "new"
+    end;
+
+  def permalink_key:
+    (.permalink // "") as $p
+    | if ($p | test("id=[0-9]+")) then ($p | capture("id=(?<id>[0-9]+)") | .id)
+      else .id
+      end;
+
+  ($workflows[0].data // []) as $flows
+  | (
+      [ $flows[]?.customStatuses[]? | {id, name, group} ]
+      | map({key: .id, value: .})
+      | from_entries
+    ) as $statusById
+  | ($spaces[0].data // []) as $spaceList
+  | (
+      $spacesFilter
+      | if . == "" then [] else split(",") end
+    ) as $followed
+  | def space_of:
+      ((.parentIds // []) + (.superParentIds // [])) as $parents
+      | ($spaceList | map(select(.id as $sid | $parents | index($sid) != null)) | .[0]) // {};
+
+  def in_followed:
+    if ($followed | length) == 0 then true
+    else
+      ((.parentIds // []) + (.superParentIds // []) + [(.id // "")]) as $ids
+      | any($followed[]; . as $want | $ids | index($want) != null)
+        or ((space_of.id // "") as $sid | $followed | index($sid) != null)
+    end;
+
+  def row:
+    (space_of) as $space
+    | ($statusById[.customStatusId] // null) as $custom
+    | {
+        key: permalink_key,
+        id: .id,
+        summary: (.title // ""),
+        type: (.dates.type // "Backlog"),
+        status: (($custom.name // .status) // ""),
+        statusCategory: category,
+        projectKey: ($space.id // ""),
+        projectName: ($space.title // ""),
+        updated: (.updatedDate // ""),
+        url: (.permalink // ""),
+        due: (.dates.due // "")
+      };
+
+  def due_sec:
+    ((.dates.due // "") | parse_date? // null);
+
+  def completed_sec:
+    ((.completedDate // "") | parse_date? // null);
+
+  (($weekStart + "T00:00:00Z") | parse_date? // null) as $ws
+  | (($weekEnd + "T00:00:00Z") | parse_date? // null) as $we
+
+  | {
+      schema: $schema,
+      mode: $mode,
+      generatedAt: (now | todate),
+      state: "ok",
+      message: "",
+      site: $site,
+      account: $account,
+      tickets: [
+        ($tasks[0].data // [])[]
+        | select($mode == "search" or (.status != "Completed" and .status != "Cancelled"))
+        | select(in_followed)
+        | row
+      ],
+      projects: [
+        $spaceList[]
+        | { key: .id, name: (.title // .id) }
+      ],
+      week: null,
+      weekState: (if $wantWeek == 1 then "ok" else "off" end)
+    }
+  | if $wantWeek != 1 or $ws == null or $we == null then .
+    else
+      (
+        [ ($tasks[0].data // [])[], ($completed[0].data // [])[] ]
+        | unique_by(.id)
+        | map(select(in_followed))
+        | map(select(
+            (completed_sec != null and completed_sec >= $ws and completed_sec < $we)
+            or (
+              (.status == "Active" or .status == "Deferred")
+              and due_sec != null
+              and due_sec < $we
+            )
+          ))
+      ) as $weekTasks
+      | .week = (
+          if ($weekTasks | length) == 0 then
+            {
+              name: "This week",
+              startDate: ($weekStart + "T00:00:00.000Z"),
+              endDate: ($weekEnd + "T00:00:00.000Z"),
+              total: 0,
+              dated: 0,
+              overdue: 0,
+              statuses: []
+            }
+          else
+            {
+              name: "This week",
+              startDate: ($weekStart + "T00:00:00.000Z"),
+              endDate: ($weekEnd + "T00:00:00.000Z"),
+              total: ($weekTasks | length),
+              dated: ([$weekTasks[] | select(due_sec != null)] | length),
+              overdue: ([
+                $weekTasks[]
+                | select((.status == "Active" or .status == "Deferred") and due_sec != null and due_sec < $ws)
+              ] | length),
+              statuses: (
+                $weekTasks
+                | map(. as $t | $t + {label: (($statusById[$t.customStatusId].name // $t.status) // "")})
+                | group_by(.label)
+                | map({
+                    name: .[0].label,
+                    category: (.[0] | category),
+                    count: length
+                  })
+                | sort_by(-.count)
+              )
+            }
+          end
+        )
+    end
+  '

@@ -1,0 +1,30 @@
+import QtQuick
+import qs.Commons
+
+Rectangle {
+  id: root
+
+  property bool active: false
+  property color foreground: "white"
+  property string fontFamily: ""
+
+  signal toggled()
+
+  width: Style.space(16)
+  height: Style.space(16)
+  radius: Style.cornerRadius
+  color: hover.hovered || active
+    ? Qt.rgba(foreground.r, foreground.g, foreground.b, 0.1)
+    : "transparent"
+
+  HoverHandler { id: hover }
+  TapHandler { onTapped: root.toggled() }
+
+  Text {
+    anchors.centerIn: parent
+    text: root.active ? "\uf053" : "\uf013"
+    color: root.foreground
+    font.family: root.fontFamily
+    font.pixelSize: Style.font.body
+  }
+}
