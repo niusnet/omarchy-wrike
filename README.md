@@ -28,7 +28,8 @@ cd ~/.config/omarchy/plugins/niusnet.wrike && ./omarchy-wrike-auth
 
 The setup asks for your datacenter (`www.wrike.com`, `eu`, or `us2`) and a
 permanent token, verifies them against Wrike before storing anything, and
-prints the clicks to make on the token page.
+prints the clicks to make on the token page. An empty token or Ctrl+C
+cancels; nothing is stored.
 
 ### Update
 
