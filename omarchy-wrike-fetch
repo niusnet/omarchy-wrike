@@ -30,6 +30,10 @@ TASKS_FILE=""
 COMPLETED_FILE=""
 SPACES_FILE=""
 WORKFLOWS_FILE=""
+FOLDERS_FILE=""
+COMMENTS_FILE=""
+ATTACHMENTS_FILE=""
+CONTACTS_FILE=""
 SEARCH_FILE=""
 IDS_FILE=""
 cleanup() {
@@ -37,6 +41,10 @@ cleanup() {
   [[ -n $COMPLETED_FILE ]] && rm -f "$COMPLETED_FILE"
   [[ -n $SPACES_FILE ]] && rm -f "$SPACES_FILE"
   [[ -n $WORKFLOWS_FILE ]] && rm -f "$WORKFLOWS_FILE"
+  [[ -n $FOLDERS_FILE ]] && rm -f "$FOLDERS_FILE"
+  [[ -n $COMMENTS_FILE ]] && rm -f "$COMMENTS_FILE"
+  [[ -n $ATTACHMENTS_FILE ]] && rm -f "$ATTACHMENTS_FILE"
+  [[ -n $CONTACTS_FILE ]] && rm -f "$CONTACTS_FILE"
   [[ -n $SEARCH_FILE ]] && rm -f "$SEARCH_FILE"
   [[ -n $IDS_FILE ]] && rm -f "$IDS_FILE"
   return 0
@@ -48,6 +56,8 @@ usage() {
 Usage: omarchy-wrike-fetch [--spaces ID[,ID...]] [--max N] [--week]
        omarchy-wrike-fetch --search QUERY
        omarchy-wrike-fetch --task ID
+       omarchy-wrike-fetch --comment ID
+       omarchy-wrike-fetch --timelog ID
 
 Prints one JSON document describing the tasks assigned to the connected
 account, or the tasks matching a search. Run omarchy-wrike-auth first to
@@ -56,6 +66,8 @@ connect an account.
   --spaces   Restrict the dashboard to these space ids
   --search   Search the whole account by permalink id or title
   --task     Fetch one task for the in-panel preview
+  --comment  Post a comment; JSON {text} on stdin
+  --timelog  Log time; JSON {hours,trackedDate,comment} on stdin
   --week     Also report this week's progress
   --max      Maximum tasks to request, 1 to 100 (default 100)
   --help     Show this message
@@ -289,6 +301,116 @@ fetch_completed_week() {
   fi
 }
 
+# Folder IDs on a task are not space IDs. Walk each space's folder tree so
+# grouping and breadcrumbs can name the space and the project above the task.
+fetch_folder_index() {
+  FOLDERS_FILE=$(mktemp)
+  printf '{"data":[]}' >"$FOLDERS_FILE"
+  local pages=() page space_id code status=0
+  page=$(mktemp)
+  code=$(api_request "$token" "$base/folders" "$page" --get \
+    --data-urlencode "deleted=false" \
+    --data-urlencode 'fields=["project"]') || status=$?
+  if ((status == 0)) && [[ $code == 200 ]] && jq -e . >/dev/null 2>&1 <"$page"; then
+    pages+=("$page")
+  else
+    rm -f "$page"
+  fi
+
+  if [[ -s $SPACES_FILE ]]; then
+    while IFS= read -r space_id; do
+      [[ -n $space_id ]] || continue
+      page=$(mktemp)
+      status=0
+      code=$(api_request "$token" "$base/folders/$space_id/folders" "$page" --get \
+        --data-urlencode "descendants=true" \
+        --data-urlencode 'fields=["project"]') || status=$?
+      if ((status == 0)) && [[ $code == 200 ]] && jq -e . >/dev/null 2>&1 <"$page"; then
+        pages+=("$page")
+      else
+        rm -f "$page"
+      fi
+    done < <(jq -r '.data[]?.id // empty' <"$SPACES_FILE" 2>/dev/null || true)
+  fi
+
+  merge_task_pages "$FOLDERS_FILE" "${pages[@]+"${pages[@]}"}"
+  for page in "${pages[@]+"${pages[@]}"}"; do
+    rm -f "$page"
+  done
+}
+
+fetch_preview_extras() {
+  local task="$1"
+  COMMENTS_FILE=$(mktemp)
+  ATTACHMENTS_FILE=$(mktemp)
+  CONTACTS_FILE=$(mktemp)
+  printf '{"data":[]}' >"$COMMENTS_FILE"
+  printf '{"data":[]}' >"$ATTACHMENTS_FILE"
+  printf '{"data":[]}' >"$CONTACTS_FILE"
+  [[ -n $task ]] || return 0
+
+  local code status=0
+  code=$(api_request "$token" "$base/tasks/$task/comments" "$COMMENTS_FILE" --get \
+    --data-urlencode "plainText=true") || status=$?
+  if ((status != 0)) || [[ $code != 200 ]] || ! jq -e . >/dev/null 2>&1 <"$COMMENTS_FILE"; then
+    printf '{"data":[]}' >"$COMMENTS_FILE"
+  fi
+
+  status=0
+  code=$(api_request "$token" "$base/tasks/$task/attachments" "$ATTACHMENTS_FILE") || status=$?
+  if ((status != 0)) || [[ $code != 200 ]] || ! jq -e . >/dev/null 2>&1 <"$ATTACHMENTS_FILE"; then
+    printf '{"data":[]}' >"$ATTACHMENTS_FILE"
+  fi
+
+  local authors
+  authors=$(jq -r '[.data[]?.authorId // empty] | unique | join(",")' <"$COMMENTS_FILE" 2>/dev/null || true)
+  if [[ -n $authors ]]; then
+    status=0
+    code=$(api_request "$token" "$base/contacts/$authors" "$CONTACTS_FILE") || status=$?
+    if ((status != 0)) || [[ $code != 200 ]] || ! jq -e . >/dev/null 2>&1 <"$CONTACTS_FILE"; then
+      printf '{"data":[]}' >"$CONTACTS_FILE"
+    fi
+  fi
+}
+
+post_comment() {
+  local task="$1"
+  local line text status=0 code file
+  IFS= read -r line || true
+  text=$(printf '%s' "$line" | jq -r '.text // empty' 2>/dev/null || true)
+  [[ -n $text ]] || emit "error" "A comment needs text." "$host" "$account"
+  file=$(mktemp)
+  code=$(api_request "$token" "$base/tasks/$task/comments" "$file" \
+    --request POST --data-urlencode "text=$text" --data-urlencode "plainText=true") || status=$?
+  rm -f "$file"
+  if ((status != 0)); then
+    emit "network-error" "Could not reach $host." "$host" "$account"
+  fi
+  handle_http "$code" "$host" "$account"
+}
+
+post_timelog() {
+  local task="$1"
+  local line hours date note status=0 code file
+  IFS= read -r line || true
+  hours=$(printf '%s' "$line" | jq -r '.hours // empty' 2>/dev/null || true)
+  date=$(printf '%s' "$line" | jq -r '.trackedDate // empty' 2>/dev/null || true)
+  note=$(printf '%s' "$line" | jq -r '.comment // empty' 2>/dev/null || true)
+  [[ -n $hours ]] || emit "error" "Hours are required to log time." "$host" "$account"
+  [[ -n $date ]] || date=$(date -u +%Y-%m-%d)
+  file=$(mktemp)
+  code=$(api_request "$token" "$base/tasks/$task/timelogs" "$file" \
+    --request POST \
+    --data-urlencode "hours=$hours" \
+    --data-urlencode "trackedDate=$date" \
+    --data-urlencode "comment=$note") || status=$?
+  rm -f "$file"
+  if ((status != 0)); then
+    emit "network-error" "Could not reach $host." "$host" "$account"
+  fi
+  handle_http "$code" "$host" "$account"
+}
+
 search_by_permalink() {
   local query="$1" status=0 code api_id
   IDS_FILE=$(mktemp)
@@ -317,7 +439,7 @@ search_by_api_id() {
   local id="$1" status=0 code file
   file=$(mktemp)
   code=$(api_request "$token" "$base/tasks/$id" "$file" --get \
-    --data-urlencode 'fields=["parentIds","superParentIds","briefDescription","description"]') || status=$?
+    --data-urlencode 'fields=["parentIds","superParentIds","briefDescription","description","effortAllocation","attachmentCount","hasAttachments"]') || status=$?
   if ((status != 0)); then
     rm -f "$file"
     emit "network-error" "Could not reach $host." "$host" "$account"
@@ -371,6 +493,16 @@ while (($# > 0)); do
     ;;
   --task)
     mode="preview"
+    task_id="${2:-}"
+    shift 2
+    ;;
+  --comment)
+    mode="comment"
+    task_id="${2:-}"
+    shift 2
+    ;;
+  --timelog)
+    mode="timelog"
     task_id="${2:-}"
     shift 2
     ;;
@@ -429,6 +561,18 @@ if [[ -z $host || -z $account || -z $base || -z $token || -z $user_id ]]; then
   emit "unconfigured" "The stored Wrike credential is incomplete. Run omarchy-wrike-auth again."
 fi
 
+if [[ $mode == "comment" || $mode == "timelog" ]]; then
+  trimmed_query=$(trim "$task_id")
+  [[ -n $trimmed_query ]] || emit "error" "A task id is required." "$host" "$account"
+  if [[ $mode == "comment" ]]; then
+    post_comment "$trimmed_query"
+  else
+    post_timelog "$trimmed_query"
+  fi
+  mode="preview"
+  task_id="$trimmed_query"
+fi
+
 TASKS_FILE=$(mktemp)
 printf '{"data":[]}' >"$TASKS_FILE"
 
@@ -468,6 +612,14 @@ WORKFLOWS_FILE=$(mktemp)
 printf '{"data":[]}' >"$WORKFLOWS_FILE"
 COMPLETED_FILE=$(mktemp)
 printf '{"data":[]}' >"$COMPLETED_FILE"
+FOLDERS_FILE=$(mktemp)
+printf '{"data":[]}' >"$FOLDERS_FILE"
+COMMENTS_FILE=$(mktemp)
+printf '{"data":[]}' >"$COMMENTS_FILE"
+ATTACHMENTS_FILE=$(mktemp)
+printf '{"data":[]}' >"$ATTACHMENTS_FILE"
+CONTACTS_FILE=$(mktemp)
+printf '{"data":[]}' >"$CONTACTS_FILE"
 
 if [[ $mode != "search" ]]; then
   spaces_status=0
@@ -489,6 +641,12 @@ if [[ $mode != "search" ]]; then
     compute_week
     fetch_completed_week
   fi
+
+  fetch_folder_index
+  if [[ $mode == "preview" ]]; then
+    preview_id=$(jq -r '.data[0].id // empty' <"$TASKS_FILE" 2>/dev/null || true)
+    fetch_preview_extras "$preview_id"
+  fi
 fi
 
 # Shared jq used to turn a Wrike task into the panel's row shape. Custom
@@ -507,6 +665,10 @@ jq -n \
   --slurpfile completed "$COMPLETED_FILE" \
   --slurpfile spaces "$SPACES_FILE" \
   --slurpfile workflows "$WORKFLOWS_FILE" \
+  --slurpfile folders "$FOLDERS_FILE" \
+  --slurpfile comments "$COMMENTS_FILE" \
+  --slurpfile attachments "$ATTACHMENTS_FILE" \
+  --slurpfile contacts "$CONTACTS_FILE" \
   '
   def parse_date:
     if . == null or . == "" then empty
@@ -547,24 +709,56 @@ jq -n \
     ) as $statusById
   | ($spaces[0].data // []) as $spaceList
   | (
+      $spaceList
+      | map({key: .id, value: {id, title}})
+      | from_entries
+    ) as $spaceById
+  | (
+      ($folders[0].data // [])
+      | map({key: .id, value: .})
+      | from_entries
+    ) as $folderById
+  | (
+      [ ($contacts[0].data // [])[] | {key: .id, value: (([.firstName // "", .lastName // ""] | map(select(. != "")) | join(" ")) )} ]
+      | from_entries
+    ) as $contactById
+  | (
       $spacesFilter
       | if . == "" then [] else split(",") end
     ) as $followed
-  | def space_of:
-      ((.parentIds // []) + (.superParentIds // [])) as $parents
-      | ($spaceList | map(select(.id as $sid | $parents | index($sid) != null)) | .[0]) // {};
+
+  | def up($id):
+      if $id == null or $id == "" then empty
+      elif $spaceById[$id] != null then $id
+      elif $folderById[$id] != null then
+        $id,
+        up((($folderById[$id].parentIds // [])[0]))
+      else empty
+      end;
+
+  def locate:
+    ((.parentIds // []) + (.superParentIds // [])) as $starts
+    | [ $starts[] | up(.) ] as $chain
+    | {
+        space: ([ $chain[] | $spaceById[.] | select(. != null) ] | .[0] // null),
+        project: ([ $chain[] | $folderById[.] | select(. != null and .project != null) ] | .[0] // null),
+        folder: ($folderById[$starts[0]] // null),
+        chain: $chain
+      };
 
   def in_followed:
     if ($followed | length) == 0 then true
     else
-      ((.parentIds // []) + (.superParentIds // []) + [(.id // "")]) as $ids
-      | any($followed[]; . as $want | $ids | index($want) != null)
-        or ((space_of.id // "") as $sid | $followed | index($sid) != null)
+      (locate.space.id // "") as $sid
+      | ($followed | index($sid) != null)
+        or ((.parentIds // []) + (.superParentIds // []) | any(.; ($followed | index(.) != null)))
     end;
 
   def row:
-    (space_of) as $space
+    (locate) as $place
     | ($statusById[.customStatusId] // null) as $custom
+    | (($place.space.title // "") ) as $spaceName
+    | (($place.project.title // "") ) as $projectName
     | {
         key: permalink_key,
         id: .id,
@@ -572,13 +766,45 @@ jq -n \
         type: (.dates.type // "Backlog"),
         status: (($custom.name // .status) // ""),
         statusCategory: category,
-        projectKey: ($space.id // ""),
-        projectName: ($space.title // ""),
+        importance: (.importance // ""),
+        spaceKey: ($place.space.id // ""),
+        spaceName: $spaceName,
+        projectKey: ($place.project.id // $place.space.id // ""),
+        projectName: (if $projectName != "" then $projectName else $spaceName end),
+        folderName: ($place.folder.title // ""),
+        breadcrumb: (
+          [
+            (if $place.space != null then {id: $place.space.id, title: $place.space.title, kind: "space"} else empty end),
+            (if $place.project != null then {id: $place.project.id, title: $place.project.title, kind: "project"} else empty end),
+            (if $place.folder != null and ($place.project == null or $place.folder.id != $place.project.id) and ($place.space == null or $place.folder.id != $place.space.id)
+             then {id: $place.folder.id, title: $place.folder.title, kind: "folder"}
+             else empty end)
+          ]
+        ),
         updated: (.updatedDate // ""),
         url: (.permalink // ""),
+        start: (.dates.start // ""),
         due: (.dates.due // ""),
+        effortMinutes: ((.effortAllocation.allocatedEffort // .effortAllocation.totalEffort // 0)),
         brief: (.briefDescription // ""),
-        description: (if $mode == "preview" then (.description // .briefDescription // "") else (.briefDescription // "") end)
+        description: (if $mode == "preview" then (.description // .briefDescription // "") else (.briefDescription // "") end),
+        attachmentCount: ((.attachmentCount // 0)),
+        hasAttachments: ((.hasAttachments // false) or ((.attachmentCount // 0) > 0)),
+        attachments: (if $mode == "preview" then
+          [ ($attachments[0].data // [])[] | {
+              id: .id,
+              name: (.name // .fileName // "Attachment"),
+              url: (.url // .permalink // "")
+            } ]
+        else [] end),
+        comments: (if $mode == "preview" then
+          [ ($comments[0].data // [])[] | {
+              id: .id,
+              author: ($contactById[.authorId] // .authorId // ""),
+              created: (.createdDate // ""),
+              text: (.text // "")
+            } ]
+        else [] end)
       };
 
   def due_sec:

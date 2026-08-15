@@ -291,14 +291,32 @@ test('applyListFilter keeps only the asked group', () => {
   assert.equal(Model.applyListFilter(withDue, 'all', now).length, withDue.length)
 })
 
-test('groupBySpace clusters by space name and sorts them', () => {
+test('groupBySpace clusters by space name, not by the inner project', () => {
   const groups = Model.groupBySpace([
-    { key: '2', projectName: 'Ops', projectKey: 'OPS' },
-    { key: '1', projectName: 'Demo', projectKey: 'DEMO' },
-    { key: '3', projectName: 'Demo', projectKey: 'DEMO' }
+    { key: '2', spaceName: 'Ops', projectName: 'Admin' },
+    { key: '1', spaceName: 'Demo', projectName: 'Website Redesign' },
+    { key: '3', spaceName: 'Demo', projectName: 'Website Redesign' }
   ])
   assert.deepEqual(groups.map(g => g.title), ['Demo', 'Ops'])
   assert.deepEqual(groups[0].tickets.map(t => t.key), ['1', '3'])
+})
+
+test('newestComments sorts newest first and pages them', () => {
+  const page = Model.newestComments([
+    { id: 'a', created: '2026-08-10T10:00:00Z', text: 'old' },
+    { id: 'c', created: '2026-08-14T10:00:00Z', text: 'new' },
+    { id: 'b', created: '2026-08-12T10:00:00Z', text: 'mid' }
+  ], 2)
+  assert.deepEqual(page.items.map(c => c.id), ['c', 'b'])
+  assert.equal(page.remaining, 1)
+})
+
+test('formatEffortMinutes and breadcrumbText', () => {
+  assert.equal(Model.formatEffortMinutes(90), '1h 30m')
+  assert.equal(Model.formatEffortMinutes(60), '1h')
+  assert.equal(Model.breadcrumbText({
+    breadcrumb: [{ title: 'Demo' }, { title: 'Website' }]
+  }), 'Demo / Website')
 })
 
 test('listSections can group by status or by space', () => {

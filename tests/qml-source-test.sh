@@ -37,7 +37,7 @@ for property in loading state message site account fetchedAt tickets projects \
   has "Service.qml" "property.* $property\b" "Service.qml no longer exposes $property"
 done
 
-for method in refresh search clearSearch connectAccount disconnectAccount preview; do
+for method in refresh search clearSearch connectAccount disconnectAccount preview postComment logTime; do
   has "Service.qml" "function $method\(" "Service.qml no longer has $method()"
 done
 

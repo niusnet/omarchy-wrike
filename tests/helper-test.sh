@@ -85,6 +85,14 @@ elif [[ $url == *"/spaces/"*"/tasks"* ]]; then
 elif [[ $url == *"/spaces"* ]]; then
   code="${SPACES_STUB_CODE:-$code}"
   [[ -n $output ]] && cat "$FIXTURE_DIR/spaces.json" >"$output"
+elif [[ $url == *"/folders"* ]]; then
+  [[ -n $output ]] && cat "$FIXTURE_DIR/folders.json" >"$output"
+elif [[ $url == *"/comments"* ]]; then
+  [[ -n $output ]] && cat "$FIXTURE_DIR/comments.json" >"$output"
+elif [[ $url == *"/attachments"* ]]; then
+  [[ -n $output ]] && cat "$FIXTURE_DIR/attachments.json" >"$output"
+elif [[ $url == *"/contacts"* ]]; then
+  [[ -n $output ]] && printf '%s' '{"data":[{"id":"KUAAAAAA","firstName":"Test","lastName":"User"}]}' >"$output"
 elif [[ $url == *"/ids"* ]]; then
   [[ -n $output ]] && cat "$FIXTURE_DIR/ids.json" >"$output"
 elif [[ $url == *"/tasks/"* ]]; then
@@ -164,8 +172,10 @@ assert_jq '.tickets[0].summary == "Refresh card limit"' "$payload" "title missin
 assert_jq '.tickets[0].type == "Planned"' "$payload" "dates.type missing"
 assert_jq '.tickets[0].status == "In Progress"' "$payload" "custom status name missing"
 assert_jq '.tickets[0].statusCategory == "indeterminate"' "$payload" "started planned task is not in progress"
-assert_jq '.tickets[0].projectKey == "IEAAAADEMO000001"' "$payload" "space id missing"
-assert_jq '.tickets[0].projectName == "Demo"' "$payload" "space name missing"
+assert_jq '.tickets[0].spaceName == "Demo"' "$payload" "space name missing"
+assert_jq '.tickets[0].projectName == "Website Redesign"' "$payload" "project folder name missing"
+assert_jq '.tickets[0].projectKey == "IEAAAAFOLDERWEB"' "$payload" "project folder id missing"
+assert_jq '.tickets[0].breadcrumb[0].title == "Demo"' "$payload" "breadcrumb space missing"
 assert_jq '.tickets[0].url == "https://'"$HOST"'/open.htm?id=101"' "$payload" "permalink is wrong"
 assert_jq '.tickets[0].brief == "Raise the card limit before Friday."' "$payload" "brief description missing"
 
@@ -241,6 +251,9 @@ payload=$(run_helper --task IEAAAAAOKQAAAAA9) || fail "helper failed on --task"
 assert_jq '.mode == "preview"' "$payload" "mode is not preview"
 assert_jq '.tickets[0].key == "109"' "$payload" "preview missed the task"
 assert_jq '.tickets[0].description | test("Check line 4")' "$payload" "preview is missing the description"
+assert_jq '.tickets[0].spaceName == "Demo"' "$payload" "preview space name missing"
+assert_jq '.tickets[0].comments | length == 2' "$payload" "preview comments missing"
+assert_jq '.tickets[0].attachments[0].name == "invoice.pdf"' "$payload" "preview attachments missing"
 assert_contains "$(cat "$STUB_DIR/urls")" "/tasks/IEAAAAAOKQAAAAA9" "preview did not fetch the task"
 
 reset_state

@@ -295,7 +295,10 @@ function filterBySpace(tickets, followed) {
 
   var kept = []
   for (i = 0; i < list.length; i++) {
-    if (lowered.indexOf(text(list[i] && list[i].projectKey).toLowerCase()) !== -1)
+    var key = text(list[i] && list[i].spaceKey)
+    if (key === "")
+      key = text(list[i] && list[i].projectKey)
+    if (lowered.indexOf(key.toLowerCase()) !== -1)
       kept.push(list[i])
   }
   return kept
@@ -506,16 +509,23 @@ function applyListFilter(tickets, filter, nowMs) {
   return out
 }
 
+function spaceTitle(ticket) {
+  var name = text(ticket && ticket.spaceName)
+  if (name === "")
+    name = text(ticket && ticket.projectName)
+  if (name === "")
+    name = text(ticket && ticket.spaceKey)
+  if (name === "")
+    name = "Other"
+  return name
+}
+
 function groupBySpace(tickets) {
   var list = asArray(tickets)
   var groups = []
   var indexByName = {}
   for (var i = 0; i < list.length; i++) {
-    var name = text(list[i] && list[i].projectName)
-    if (name === "")
-      name = text(list[i] && list[i].projectKey)
-    if (name === "")
-      name = "Other"
+    var name = spaceTitle(list[i])
     if (indexByName[name] === undefined) {
       indexByName[name] = groups.length
       groups.push({ title: name, tickets: [] })
@@ -564,6 +574,62 @@ function decorateSections(sections, nowMs) {
   return out
 }
 
+function formatEffortMinutes(minutes) {
+  var value = Number(minutes)
+  if (!isFinite(value) || value <= 0)
+    return ""
+  var hours = Math.floor(value / 60)
+  var mins = Math.round(value % 60)
+  if (hours === 0)
+    return mins + "m"
+  if (mins === 0)
+    return hours + "h"
+  return hours + "h " + mins + "m"
+}
+
+function breadcrumbText(ticket) {
+  var crumbs = asArray(ticket && ticket.breadcrumb)
+  if (crumbs.length > 0) {
+    var parts = []
+    for (var i = 0; i < crumbs.length; i++) {
+      var title = text(crumbs[i] && crumbs[i].title)
+      if (title !== "")
+        parts.push(title)
+    }
+    return parts.join(" / ")
+  }
+  var fallback = []
+  if (text(ticket && ticket.spaceName) !== "")
+    fallback.push(text(ticket.spaceName))
+  if (text(ticket && ticket.projectName) !== "" && text(ticket.projectName) !== text(ticket.spaceName))
+    fallback.push(text(ticket.projectName))
+  if (text(ticket && ticket.folderName) !== "" && fallback.indexOf(text(ticket.folderName)) === -1)
+    fallback.push(text(ticket.folderName))
+  return fallback.join(" / ")
+}
+
+function newestComments(comments, limit) {
+  var list = asArray(comments).slice()
+  list.sort(function (left, right) {
+    var a = Date.parse(text(left && left.created))
+    var b = Date.parse(text(right && right.created))
+    if (!isFinite(a) && !isFinite(b))
+      return 0
+    if (!isFinite(a))
+      return 1
+    if (!isFinite(b))
+      return -1
+    return b - a
+  })
+  var cap = Number(limit)
+  if (!isFinite(cap) || cap < 1)
+    cap = 5
+  return {
+    items: list.slice(0, cap),
+    remaining: Math.max(0, list.length - cap)
+  }
+}
+
 function flattenSections(sections) {
   var list = asArray(sections)
   var out = []
@@ -601,7 +667,11 @@ if (typeof module !== "undefined" && module.exports) {
     isOverdue: isOverdue,
     applyListFilter: applyListFilter,
     groupBySpace: groupBySpace,
+    spaceTitle: spaceTitle,
     listSections: listSections,
+    formatEffortMinutes: formatEffortMinutes,
+    breadcrumbText: breadcrumbText,
+    newestComments: newestComments,
     decorateSections: decorateSections,
     flattenSections: flattenSections
   }

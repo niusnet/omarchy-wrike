@@ -1,0 +1,14 @@
+{
+  "kind": "folders",
+  "data": [
+    { "id": "IEAAAADEMO000001", "title": "Demo", "parentIds": [] },
+    {
+      "id": "IEAAAAFOLDERWEB",
+      "title": "Website Redesign",
+      "parentIds": ["IEAAAADEMO000001"],
+      "project": { "startDate": "2026-08-01" }
+    },
+    { "id": "IEAAAAOPS0000002", "title": "Operations", "parentIds": [] },
+    { "id": "IEAAAAFOLDEROPS", "title": "Admin", "parentIds": ["IEAAAAOPS0000002"] }
+  ]
+}

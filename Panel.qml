@@ -232,14 +232,14 @@ Panel {
     bar: root.bar
     open: root.opened
     focusTarget: keyCatcher
-    contentWidth: panel.fittedContentWidth(Style.space(420))
-    contentHeight: panel.fittedContentHeight(content.implicitHeight, Style.space(640))
+    contentWidth: panel.fittedContentWidth(Style.space(root.showPreview ? 560 : 420))
+    contentHeight: panel.fittedContentHeight(content.implicitHeight, Style.space(root.showPreview ? 760 : 640))
 
     PanelKeyCatcher {
       id: keyCatcher
 
       anchors.fill: parent
-      blocked: searchField.inputFocused || settingsView.inputFocused
+      blocked: searchField.inputFocused || settingsView.inputFocused || taskPreview.inputFocused
       onMoveRequested: function (dx, dy) { if (dy !== 0) root.moveHighlight(dy) }
       onActivateRequested: root.activateHighlighted()
       onCloseRequested: {
@@ -340,14 +340,22 @@ Panel {
           }
 
           TaskPreview {
+            id: taskPreview
+
             width: parent.width
             visible: !root.showSettings && root.showPreview
             ticket: wrike.previewTicket
             loading: wrike.previewLoading
+            posting: wrike.previewPosting
+            actionMessage: wrike.previewAction
+            commentsLimit: wrike.commentsLimit
             foreground: root.foreground
             fontFamily: root.fontFamily
             onBackRequested: root.closePreview()
             onOpenRequested: root.openInBrowser(root.highlightedKey)
+            onMoreCommentsRequested: wrike.showMoreComments()
+            onCommentRequested: function (text) { wrike.postComment(text) }
+            onTimeRequested: function (hours, note) { wrike.logTime(hours, note) }
           }
 
           TaskSections {

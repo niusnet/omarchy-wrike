@@ -4,7 +4,8 @@ Your Wrike work in the Omarchy bar, and a search box for everything else.
 
 ## What it shows
 
-- **Your tasks**, split into what is in progress and what is still to do
+- **Your tasks**, split by status or grouped by the real Wrike space
+- **A task modal** with breadcrumb, description, attachments, comments, and time logging
 - **This week**, with progress bars for time, finished work and overdue work
 - **Search across the whole account**, by permalink id or by title
 

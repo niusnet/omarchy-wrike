@@ -29,7 +29,10 @@ Item {
 
   property var previewTicket: null
   property bool previewLoading: false
+  property bool previewPosting: false
   property string previewKey: ""
+  property string previewAction: ""
+  property int commentsLimit: 5
 
   property bool connecting: false
   property string authMessage: ""
@@ -40,6 +43,7 @@ Item {
   property string _authStdout: ""
   property string _authStderr: ""
   property string _previewStdout: ""
+  property string _previewPayload: ""
   property string _authPayload: ""
 
   readonly property var groups: Model.groupTickets(tickets)
@@ -206,13 +210,52 @@ Item {
   function preview(taskId, fallback) {
     previewKey = String(taskId || "")
     previewTicket = fallback || null
+    commentsLimit = 5
     if (previewKey === "")
       return
     if (previewProcess.running)
       previewProcess.running = false
     previewLoading = true
     _previewStdout = ""
+    _previewPayload = ""
+    previewProcess.stdinEnabled = false
     previewProcess.command = [helperPath(), "--task", previewKey]
+    previewProcess.running = true
+  }
+
+  function showMoreComments() {
+    commentsLimit += 5
+  }
+
+  function postComment(text) {
+    if (previewKey === "" || String(text || "").trim() === "")
+      return
+    runPreviewAction("--comment", JSON.stringify({ text: String(text) }))
+  }
+
+  function logTime(hours, note) {
+    if (previewKey === "" || String(hours || "").trim() === "")
+      return
+    var today = new Date()
+    var month = today.getMonth() + 1
+    var day = today.getDate()
+    var date = today.getFullYear() + "-" + (month < 10 ? "0" : "") + month + "-" + (day < 10 ? "0" : "") + day
+    runPreviewAction("--timelog", JSON.stringify({
+      hours: String(hours),
+      trackedDate: date,
+      comment: String(note || "")
+    }))
+  }
+
+  function runPreviewAction(flag, payload) {
+    if (previewProcess.running)
+      previewProcess.running = false
+    previewPosting = true
+    previewAction = qsTr("Saving")
+    _previewStdout = ""
+    _previewPayload = payload
+    previewProcess.command = [helperPath(), flag, previewKey]
+    previewProcess.stdinEnabled = payload !== ""
     previewProcess.running = true
   }
 
@@ -220,17 +263,26 @@ Item {
     previewKey = ""
     previewTicket = null
     previewLoading = false
+    previewPosting = false
+    previewAction = ""
+    commentsLimit = 5
     if (previewProcess.running)
       previewProcess.running = false
   }
 
   function applyPreview(raw) {
     previewLoading = false
+    previewPosting = false
     try {
       var data = JSON.parse(String(raw || ""))
-      if (String(data.state || "") === "ok" && Array.isArray(data.tickets) && data.tickets.length > 0)
+      if (String(data.state || "") === "ok" && Array.isArray(data.tickets) && data.tickets.length > 0) {
         previewTicket = data.tickets[0]
+        previewAction = ""
+      } else {
+        previewAction = String(data.message || qsTr("Could not update the task."))
+      }
     } catch (error) {
+      previewAction = qsTr("Could not read the task response.")
     }
   }
 
@@ -331,6 +383,12 @@ Item {
 
     running: false
     command: []
+    stdinEnabled: false
+    onStarted: {
+      if (root._previewPayload !== "")
+        write(root._previewPayload + "\n")
+      root._previewPayload = ""
+    }
     onExited: function (exitCode) {
       root.applyPreview(String(previewCollector.text || root._previewStdout || ""))
     }

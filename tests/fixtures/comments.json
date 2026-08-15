@@ -1,0 +1,17 @@
+{
+  "kind": "comments",
+  "data": [
+    {
+      "id": "IEAAAACOMMENT01",
+      "authorId": "KUAAAAAA",
+      "text": "Please check line 4.",
+      "createdDate": "2026-08-14T11:00:00Z"
+    },
+    {
+      "id": "IEAAAACOMMENT02",
+      "authorId": "KUAAAAAA",
+      "text": "PO attached.",
+      "createdDate": "2026-08-13T09:00:00Z"
+    }
+  ]
+}
