@@ -271,7 +271,7 @@ Panel {
             fontFamily: root.fontFamily
           }
 
-          SearchField {
+          WrikeSearchField {
             id: searchField
 
             width: parent.width

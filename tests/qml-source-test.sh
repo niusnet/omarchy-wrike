@@ -58,8 +58,8 @@ done
 has "Panel.qml" "onMoveRequested" "Panel.qml no longer moves the cursor"
 has "Panel.qml" "onActivateRequested" "Panel.qml no longer opens the highlighted row"
 has "Panel.qml" "onCloseRequested" "Panel.qml no longer closes on escape"
-has "SearchField.qml" "Keys\.onUpPressed" "the search field swallows the up arrow again"
-has "SearchField.qml" "Keys\.onDownPressed" "the search field swallows the down arrow again"
+has "WrikeSearchField.qml" "Keys\.onUpPressed" "the search field swallows the up arrow again"
+has "WrikeSearchField.qml" "Keys\.onDownPressed" "the search field swallows the down arrow again"
 
 hasnt "Panel.qml" "elide: Text\.ElideRight" \
   "Panel.qml is drawing text rows again instead of delegating to TaskRow"
