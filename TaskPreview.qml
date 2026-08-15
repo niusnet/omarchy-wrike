@@ -392,18 +392,21 @@ Column {
   }
 
   Button {
-    visible: root.previewTab === "details"
-    enabled: root.commentPage.remaining > 0
-    text: root.commentPage.remaining > 0
-      ? qsTr("Load 10 more") + " · " + root.commentPage.remaining + qsTr(" left")
-      : qsTr("All comments loaded")
+    visible: root.previewTab === "details" && root.commentPage.remaining > 0
+    text: qsTr("Load 10 more") + " · " + root.commentPage.remaining + qsTr(" left")
     foreground: root.foreground
     fontFamily: root.fontFamily
     bordered: true
-    onClicked: {
-      if (root.commentPage.remaining > 0)
-        root.moreCommentsRequested()
-    }
+    onClicked: root.moreCommentsRequested()
+  }
+
+  Text {
+    width: parent.width
+    visible: root.previewTab === "details" && !root.loading && root.commentPage.items.length > 0 && root.commentPage.remaining === 0
+    text: qsTr("No more comments.")
+    color: root.faint
+    font.family: root.fontFamily
+    font.pixelSize: Style.font.caption
   }
 
   TextField {

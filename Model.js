@@ -647,15 +647,38 @@ function newestComments(comments, limit) {
   }
 }
 
-function flattenSections(sections) {
+function flattenSections(sections, collapsed) {
   var list = asArray(sections)
+  var hidden = collapsed && typeof collapsed === "object" ? collapsed : {}
   var out = []
   for (var i = 0; i < list.length; i++) {
+    var title = text(list[i] && list[i].title)
+    if (hidden[title])
+      continue
     var rows = asArray(list[i] && list[i].tickets)
     for (var j = 0; j < rows.length; j++)
       out.push(rows[j])
   }
   return out
+}
+
+function toggleCollapsed(current, title) {
+  var next = {}
+  var name
+  var wanted = text(title)
+  if (wanted === "")
+    return current && typeof current === "object" ? current : {}
+  if (current && typeof current === "object") {
+    for (name in current) {
+      if (Object.prototype.hasOwnProperty.call(current, name) && current[name])
+        next[name] = true
+    }
+  }
+  if (next[wanted])
+    delete next[wanted]
+  else
+    next[wanted] = true
+  return next
 }
 
 if (typeof module !== "undefined" && module.exports) {
@@ -691,6 +714,7 @@ if (typeof module !== "undefined" && module.exports) {
     newestComments: newestComments,
     formatCommentDate: formatCommentDate,
     decorateSections: decorateSections,
-    flattenSections: flattenSections
+    flattenSections: flattenSections,
+    toggleCollapsed: toggleCollapsed
   }
 }

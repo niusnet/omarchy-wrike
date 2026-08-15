@@ -337,3 +337,14 @@ test('flattenSections walks sections in display order', () => {
   const flat = Model.flattenSections(Model.listSections(TASKS, 'status', 'all', 25))
   assert.deepEqual(flat.map(t => t.key), ['101', '102', '103', '104'])
 })
+
+test('flattenSections skips collapsed groups', () => {
+  const sections = Model.listSections(TASKS, 'status', 'all', 25)
+  const flat = Model.flattenSections(sections, { 'IN PROGRESS': true })
+  assert.deepEqual(flat.map(t => t.key), ['103', '104'])
+})
+
+test('toggleCollapsed adds and removes a section title', () => {
+  assert.deepEqual(Model.toggleCollapsed({}, 'CCPSD'), { CCPSD: true })
+  assert.deepEqual(Model.toggleCollapsed({ CCPSD: true }, 'CCPSD'), {})
+})

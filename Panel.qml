@@ -20,6 +20,7 @@ Panel {
   property string confirmation: ""
   property bool showSettings: false
   property bool showPreview: false
+  property var collapsedTitles: ({})
 
   readonly property var followedSpaces: wrike.followedSpaces
   readonly property string listFilter: Model.normalizeFilter(wrike.setting("listFilter", "all"))
@@ -91,7 +92,10 @@ Panel {
       Model.listSections(wrike.tickets, root.groupBy, root.listFilter, wrike.maxDisplayedTickets, Date.now()),
       Date.now())
   }
-  readonly property var visibleTickets: Model.flattenSections(visibleSections)
+  readonly property var visibleTickets: Model.flattenSections(visibleSections, collapsedTitles)
+
+  onGroupByChanged: collapsedTitles = ({})
+  onListFilterChanged: collapsedTitles = ({})
 
   function ticketAt(key) {
     for (var i = 0; i < visibleTickets.length; i++) {
@@ -364,6 +368,7 @@ Panel {
             width: parent.width
             visible: !root.showSettings && !root.showPreview
             sections: root.visibleSections
+            collapsedTitles: root.collapsedTitles
             highlightedKey: root.highlightedKey
             confirmedKey: root.confirmedKey
             confirmation: root.confirmation
@@ -371,6 +376,7 @@ Panel {
             fontFamily: root.fontFamily
             onTicketActivated: function (key) { root.openPreview(key) }
             onTicketKeyRequested: function (key) { root.copyKey(key) }
+            onSectionToggled: function (title) { root.collapsedTitles = Model.toggleCollapsed(root.collapsedTitles, title) }
           }
 
           StateNotice {

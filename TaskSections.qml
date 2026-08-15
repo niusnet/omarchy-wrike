@@ -5,6 +5,7 @@ Column {
   id: root
 
   property var sections: []
+  property var collapsedTitles: ({})
   property string highlightedKey: ""
   property string confirmedKey: ""
   property string confirmation: ""
@@ -13,6 +14,7 @@ Column {
 
   signal ticketActivated(string key)
   signal ticketKeyRequested(string key)
+  signal sectionToggled(string title)
 
   width: parent ? parent.width : 0
   spacing: Style.space(10)
@@ -26,6 +28,7 @@ Column {
       width: root.width
       title: String(modelData.title || "")
       tickets: modelData.tickets || []
+      collapsed: root.collapsedTitles && root.collapsedTitles[String(modelData.title || "")] === true
       highlightedKey: root.highlightedKey
       confirmedKey: root.confirmedKey
       confirmation: root.confirmation
@@ -33,6 +36,7 @@ Column {
       fontFamily: root.fontFamily
       onTicketActivated: function (key) { root.ticketActivated(key) }
       onTicketKeyRequested: function (key) { root.ticketKeyRequested(key) }
+      onToggleRequested: root.sectionToggled(String(modelData.title || ""))
     }
   }
 }
