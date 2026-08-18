@@ -2,7 +2,7 @@
 
 Assigned Wrike tasks in the Omarchy bar. Filter the list, search the account, and open a task without leaving the desktop.
 
-![Wrike panel on the Omarchy bar](assets/panel.png)
+![Wrike panel on the Omarchy bar](preview.png)
 
 It is not a Wrike client. It answers two questions: what is on my plate, and where is task X.
 
@@ -15,17 +15,8 @@ It is not a Wrike client. It answers two questions: what is on my plate, and whe
 
 ## Install
 
-This repository is private while the plugin is in daily use. You need GitHub access to clone it.
-
 ```bash
 omarchy plugin add https://github.com/niusnet/omarchy-wrike.git --enable
-```
-
-If `git clone` cannot see a private repo, clone with `gh` first, then add the local path:
-
-```bash
-gh repo clone niusnet/omarchy-wrike
-omarchy plugin add ./omarchy-wrike --enable
 ```
 
 `--enable` asks which bar section to use. The default is the right side.
@@ -47,6 +38,16 @@ Removing the plugin leaves the token in the keyring. Clear it from the gear (**S
 ```bash
 ~/.config/omarchy/plugins/niusnet.wrike/omarchy-wrike-auth --clear
 ```
+
+## Dependencies
+
+The plugin requires Omarchy Quattro and these tools on `PATH`:
+
+```text
+curl jq secret-tool
+```
+
+`secret-tool` comes from `libsecret`. The plugin does not install packages or change system config. It needs network access to your Wrike host (`www.wrike.com`, `app-eu.wrike.com`, or `app-us2.wrike.com`).
 
 ## Connect
 
