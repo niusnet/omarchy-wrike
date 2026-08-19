@@ -190,6 +190,30 @@ reset_state
 output=$(run_setup "" "$TOKEN") || fail "setup failed on a blank host: $output"
 [[ $(jq -r .host <"$STUB_DIR/vault") == "$HOST" ]] || fail "a blank host did not default to www.wrike.com"
 
+# The token must never leave this machine toward a host that is not a known
+# Wrike datacenter. A look-alike or pasted attacker URL is rejected before curl.
+reset_state
+if run_setup "evil.example.com" "$TOKEN" >/dev/null 2>&1; then
+  fail "setup accepted an unknown host"
+fi
+[[ ! -s "$STUB_DIR/vault" ]] || fail "an unknown host stored a credential"
+assert_not_contains "$(cat "$STUB_DIR/calls")" "evil.example.com" "the token was sent to an unknown host"
+assert_not_contains "$(cat "$STUB_DIR/creds")" "$TOKEN" "the token reached curl before the host was confirmed"
+
+reset_state
+if run_setup "www.wrike.com.evil.example.com" "$TOKEN" >/dev/null 2>&1; then
+  fail "setup accepted a look-alike host"
+fi
+assert_not_contains "$(cat "$STUB_DIR/calls")" "evil.example.com" "a look-alike host was contacted"
+
+reset_state
+if run_connect "$(jq -nc --arg host "https://evil.example.com/steal" --arg token "$TOKEN" '{host: $host, token: $token}')" >/dev/null 2>&1; then
+  fail "--connect accepted an unknown host"
+fi
+[[ ! -s "$STUB_DIR/vault" ]] || fail "--connect stored a credential for an unknown host"
+assert_not_contains "$(cat "$STUB_DIR/calls")" "evil.example.com" "--connect sent the token to an unknown host"
+assert_not_contains "$(cat "$STUB_DIR/creds")" "$TOKEN" "--connect reached curl before the host was confirmed"
+
 # A token that only the EU datacenter accepts should fall through and store
 # that host, because people often do not know which DC they are on.
 reset_state

@@ -18,6 +18,7 @@ set -euo pipefail
 readonly SERVICE="omarchy-wrike"
 readonly SCHEMA_VERSION=1
 readonly DEFAULT_MAX=100
+readonly HOSTS=("www.wrike.com" "app-eu.wrike.com" "app-us2.wrike.com")
 
 mode="dashboard"
 search_query=""
@@ -534,6 +535,17 @@ user_id=$(field userId "$CREDENTIAL")
 
 if [[ -z $host || -z $account || -z $base || -z $token || -z $user_id ]]; then
   emit "unconfigured" "The stored Wrike credential is incomplete. Run omarchy-wrike-auth again."
+fi
+
+known_host=0
+for allowed in "${HOSTS[@]}"; do
+  if [[ $host == "$allowed" ]]; then
+    known_host=1
+    break
+  fi
+done
+if ((known_host != 1)) || [[ $base != "https://$host/api/v4" ]]; then
+  emit "error" "The stored Wrike host is not a known Wrike endpoint. Run omarchy-wrike-auth again."
 fi
 
 if [[ $mode == "comment" || $mode == "timelog" ]]; then

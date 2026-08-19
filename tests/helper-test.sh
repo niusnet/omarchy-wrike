@@ -203,6 +203,29 @@ assert_contains "$(cat "$STUB_DIR/creds")" "$TOKEN" "the token never reached cur
 assert_not_contains "$(cat "$STUB_DIR/calls")" "$TOKEN" "the token leaked into a command line"
 assert_not_contains "$(cat "$STUB_DIR/calls")" "secret-tool search" "the helper called secret-tool search"
 
+# A credential pointing at any other host must not send the bearer token.
+reset_state
+jq -nc --arg host "evil.example.com" --arg account "$EMAIL" \
+  --arg base "https://evil.example.com/api/v4" --arg token "$TOKEN" \
+  --arg userId "$USER_ID" \
+  '{host: $host, account: $account, base: $base, token: $token, userId: $userId}' \
+  >"$STUB_DIR/vault"
+payload=$(run_helper) || fail "helper exited non zero on an unknown stored host"
+assert_jq '.state == "error"' "$payload" "an unknown stored host is not an error"
+assert_not_contains "$(cat "$STUB_DIR/urls")" "evil.example.com" "the helper contacted an unknown stored host"
+assert_not_contains "$(cat "$STUB_DIR/creds")" "$TOKEN" "the token reached curl for an unknown stored host"
+
+reset_state
+jq -nc --arg host "$HOST" --arg account "$EMAIL" \
+  --arg base "https://evil.example.com/api/v4" --arg token "$TOKEN" \
+  --arg userId "$USER_ID" \
+  '{host: $host, account: $account, base: $base, token: $token, userId: $userId}' \
+  >"$STUB_DIR/vault"
+payload=$(run_helper) || fail "helper exited non zero on a mismatched base URL"
+assert_jq '.state == "error"' "$payload" "a mismatched base URL is not an error"
+assert_not_contains "$(cat "$STUB_DIR/urls")" "evil.example.com" "the helper used a mismatched base URL"
+assert_not_contains "$(cat "$STUB_DIR/creds")" "$TOKEN" "the token reached curl for a mismatched base URL"
+
 # ---- Space narrowing
 
 reset_state
